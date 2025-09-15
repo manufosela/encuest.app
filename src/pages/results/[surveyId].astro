@@ -15,12 +15,11 @@ const { surveyId } = Astro.params;
   </head>
   <body>
     <div class="container">
+      <div class="survey-title">
+        <h1 id="survey-name">Cargando...</h1>
+      </div>
+      
       <div class="results-card">
-        <div class="header">
-          <h1>📊 Resultados en Tiempo Real</h1>
-          <p id="survey-name">Cargando...</p>
-        </div>
-        
         <div id="results-content" class="results-content">
           <div class="loading">
             <div class="spinner"></div>
@@ -120,6 +119,10 @@ const { surveyId } = Astro.params;
         const questionHTML = question.text + question.votingEnabled;
         const needsRebuild = currentQuestionHTML !== questionHTML || !document.getElementById('resultsChart');
         
+        // Check if options are too long (more than 15 characters average or any option > 25 chars)
+        const hasLongOptions = question.options.some(opt => opt.length > 25) || 
+                              (question.options.reduce((sum, opt) => sum + opt.length, 0) / question.options.length) > 15;
+        
         if (needsRebuild) {
           console.log('Rebuilding HTML for new question or missing chart');
           currentQuestionHTML = questionHTML;
@@ -133,6 +136,18 @@ const { surveyId } = Astro.params;
               </h2>
               
               <div class="chart-container">
+                ${hasLongOptions ? `
+                  <div class="chart-legend">
+                    <div class="legend-items">
+                      ${question.options.map((option, index) => `
+                        <div class="legend-item">
+                          <span class="legend-color" style="background-color: ${kahootColors[index % kahootColors.length]};"></span>
+                          <span class="legend-text">${option}</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
                 <div class="chart-wrapper">
                   <canvas id="resultsChart"></canvas>
                 </div>
@@ -183,10 +198,10 @@ const { surveyId } = Astro.params;
         }
         
         // Create or update Chart.js chart
-        createChart(question, voteData, kahootColors, totalVotes);
+        createChart(question, voteData, kahootColors, totalVotes, hasLongOptions);
       }
       
-      function createChart(question, votes, colors, totalVotes) {
+      function createChart(question, votes, colors, totalVotes, hasLongOptions = false) {
         const ctx = document.getElementById('resultsChart');
         if (!ctx) {
           console.error('Chart canvas not found');
@@ -197,14 +212,19 @@ const { surveyId } = Astro.params;
         const voteData = question.options.map((_, index) => votes[index] || 0);
         const backgroundColors = question.options.map((_, index) => colors[index % colors.length]);
         
-        console.log('Chart data:', { question: question.text, voteData, totalVotes });
+        // Use color indicators if we have long options (colored squares)
+        const chartLabels = hasLongOptions ? 
+          question.options.map((_, index) => `●`) : 
+          question.options;
+        
+        console.log('Chart data:', { question: question.text, voteData, totalVotes, hasLongOptions });
         
         // If chart doesn't exist, create it
         if (!currentChart) {
           currentChart = new Chart(ctx, {
             type: 'bar',
             data: {
-              labels: question.options,
+              labels: chartLabels,
               datasets: [{
                 label: 'Votos',
                 data: voteData,
@@ -279,7 +299,14 @@ const { surveyId } = Astro.params;
                     label: function(context) {
                       const value = context.parsed.y;
                       const percentage = totalVotes > 0 ? Math.round((value / totalVotes) * 100) : 0;
-                      return `${value} ${value === 1 ? 'voto' : 'votos'} (${percentage}%)`;
+                      const optionText = hasLongOptions ? question.options[context.dataIndex] : context.label;
+                      return [`${optionText}`, `${value} ${value === 1 ? 'voto' : 'votos'} (${percentage}%)`];
+                    },
+                    title: function(context) {
+                      if (hasLongOptions) {
+                        return 'Opción';
+                      }
+                      return context[0].label;
                     }
                   }
                 }
@@ -292,7 +319,7 @@ const { surveyId } = Astro.params;
         } else {
           // Update existing chart
           console.log('Updating existing chart with data:', voteData);
-          currentChart.data.labels = question.options;
+          currentChart.data.labels = chartLabels;
           currentChart.data.datasets[0].data = voteData;
           currentChart.data.datasets[0].backgroundColor = backgroundColors;
           currentChart.data.datasets[0].borderColor = backgroundColors.map(color => color + 'dd');

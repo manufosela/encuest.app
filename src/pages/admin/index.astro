@@ -271,7 +271,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   loadSurveys();
 </script>
 
-<style>
+<style is:global>
   .admin-container {
     background: white;
     padding: 2rem;
@@ -297,10 +297,29 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   }
   
   .survey-card {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
+    background: white;
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    border: 1px solid #f0f0f0;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .survey-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+  }
+  
+  .survey-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(0,0,0,0.12);
   }
   
   .survey-card h3 {
@@ -314,30 +333,91 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   }
   
   .survey-code {
-    background: #e9ecef;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    padding: 0.75rem 1.25rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
     display: inline-block;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+  }
+  
+  .survey-code:hover {
+    border-color: #667eea;
+    transform: scale(1.02);
   }
   
   .code-label {
-    font-weight: 500;
+    font-weight: 600;
     color: #495057;
     margin-right: 0.5rem;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   
   .code-value {
-    font-family: monospace;
-    font-size: 1.125rem;
-    font-weight: bold;
-    color: #007bff;
-    letter-spacing: 0.1em;
+    font-family: 'Courier New', monospace;
+    font-size: 1.25rem;
+    font-weight: 900;
+    color: #667eea;
+    letter-spacing: 0.15em;
+    text-shadow: 0 1px 3px rgba(102, 126, 234, 0.2);
   }
   
   .survey-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #f0f0f0;
+  }
+  
+  .survey-actions .btn-primary,
+  .survey-actions .btn-secondary,
+  .survey-actions .btn-danger {
+    flex: 1;
+    min-width: auto;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    text-align: center;
+  }
+  
+  .survey-actions .btn-secondary {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border: 2px solid #dee2e6;
+    color: #495057;
+  }
+  
+  .survey-actions .btn-secondary:hover {
+    background: linear-gradient(135deg, #e9ecef, #dee2e6);
+    border-color: #adb5bd;
+    color: #343a40;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  
+  .survey-actions .btn-primary {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    box-shadow: 0 3px 12px rgba(102, 126, 234, 0.3);
+  }
+  
+  .survey-actions .btn-primary:hover {
+    background: linear-gradient(135deg, #5a67d8, #6b46c1);
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+    transform: translateY(-1px);
+  }
+  
+  .survey-actions .btn-danger {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    box-shadow: 0 3px 12px rgba(220, 53, 69, 0.3);
+  }
+  
+  .survey-actions .btn-danger:hover {
+    background: linear-gradient(135deg, #c82333, #a71e2a);
+    box-shadow: 0 4px 16px rgba(220, 53, 69, 0.4);
+    transform: translateY(-1px);
   }
   
   .question-card {
@@ -464,45 +544,81 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   
   /* Button styles */
   .btn-primary {
-    background: #007bff;
+    background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
     cursor: pointer;
     font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
   
   .btn-primary:hover {
-    background: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, #5a67d8, #6b46c1);
+  }
+  
+  .btn-primary:active {
+    transform: translateY(0);
   }
   
   .btn-secondary {
-    background: #6c757d;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    background: #f8f9fa;
+    color: #495057;
+    border: 2px solid #e9ecef;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
     cursor: pointer;
     font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
   
   .btn-secondary:hover {
-    background: #545b62;
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
   }
   
   .btn-danger {
-    background: #dc3545;
+    background: linear-gradient(135deg, #dc3545, #c82333);
     color: white;
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 3px 10px rgba(220, 53, 69, 0.3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
   }
   
   .btn-danger:hover {
-    background: #c82333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+    background: linear-gradient(135deg, #c82333, #a71e2a);
+  }
+  
+  .btn-danger:active {
+    transform: translateY(0);
   }
   
   .btn-small {

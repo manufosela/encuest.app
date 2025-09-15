@@ -7,6 +7,9 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     <div class="control-header">
       <h2 id="survey-name">Cargando encuesta...</h2>
       <div class="control-links">
+        <a href="/admin" class="link-badge admin-link">
+          🏠 Admin
+        </a>
         <a id="voting-link" href="#" target="_blank" class="link-badge">
           📱 Página de votación
         </a>
@@ -371,16 +374,32 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: #f0f0f0;
-    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border-radius: 12px;
     text-decoration: none;
-    color: #333;
-    transition: background 0.3s;
+    color: #495057;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
   
   .link-badge:hover {
-    background: #e0e0e0;
+    background: linear-gradient(135deg, #e9ecef, #dee2e6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  
+  .admin-link {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border-color: #667eea;
+  }
+  
+  .admin-link:hover {
+    background: linear-gradient(135deg, #5a67d8, #6b46c1);
+    color: white;
   }
   
   .control-panel {

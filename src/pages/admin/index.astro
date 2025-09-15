@@ -200,6 +200,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
         </div>
         <div class="survey-actions">
           <button onclick="viewQuestions('${id}')" class="btn-secondary">Preguntas</button>
+          <button onclick="goToQR('${id}')" class="btn-secondary">📱 QR</button>
           <button onclick="goToControl('${id}')" class="btn-primary">Control</button>
           <button onclick="deleteSurveyHandler('${id}')" class="btn-danger">Eliminar</button>
         </div>
@@ -234,6 +235,11 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   // Go to control
   window.goToControl = (surveyId) => {
     window.location.href = `/admin/control?survey=${surveyId}`;
+  };
+  
+  // Go to QR page
+  window.goToQR = (surveyId) => {
+    window.open(`/qr?id=${surveyId}`, '_blank');
   };
   
   // Delete survey

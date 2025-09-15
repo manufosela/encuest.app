@@ -1,0 +1,251 @@
+---
+// Static page - surveyId handled in client from URL
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Código QR - Encuestapp</title>
+    <link rel="stylesheet" href="/css/survey.css">
+  </head>
+  <body>
+    <div class="qr-container">
+      <div class="qr-card">
+        <div class="qr-header">
+          <h1 id="survey-name">Cargando...</h1>
+        </div>
+        
+        <div class="qr-content">
+          <div id="qr-canvas-container">
+            <canvas id="qr-canvas"></canvas>
+          </div>
+          
+          <div class="qr-info">
+            <div class="info-section">
+              <label>URL de votación</label>
+              <div class="url-display">
+                <span id="vote-url">https://encuest.app/vote?id=...</span>
+              </div>
+            </div>
+            
+            <div class="info-section">
+              <label>Código</label>
+              <div class="code-display">
+                <span id="survey-code">...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { getSurvey } from '/src/lib/firebase/database.js';
+      import { generateQRCode } from '/src/lib/utils/qr.js';
+      
+      // Get surveyId from URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const surveyId = urlParams.get('id');
+      
+      if (!surveyId) {
+        alert('No se especificó la encuesta');
+        window.location.href = '/admin';
+      }
+      
+      // Generate QR Code
+      async function generateQR() {
+        try {
+          // Load survey info
+          const survey = await getSurvey(surveyId);
+          if (!survey) {
+            alert('Encuesta no encontrada');
+            window.location.href = '/admin';
+            return;
+          }
+          
+          // Update UI
+          document.getElementById('survey-name').textContent = survey.name;
+          document.getElementById('survey-code').textContent = survey.code || 'N/A';
+          
+          // Generate URLs
+          const baseUrl = window.location.origin;
+          const voteUrl = `${baseUrl}/vote?id=${surveyId}`;
+          document.getElementById('vote-url').textContent = voteUrl;
+          
+          // Generate QR Code
+          const qrDataUrl = await generateQRCode(voteUrl);
+          const canvas = document.getElementById('qr-canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          img.onload = () => {
+            canvas.width = 300;
+            canvas.height = 300;
+            ctx.drawImage(img, 0, 0, 300, 300);
+          };
+          
+          img.src = qrDataUrl;
+          
+        } catch (error) {
+          console.error('Error generating QR:', error);
+          alert('Error al generar el código QR');
+        }
+      }
+      
+      // Initialize
+      generateQR();
+    </script>
+  </body>
+</html>
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    overflow: hidden;
+  }
+  
+  .qr-container {
+    width: 100%;
+    max-width: 900px;
+    height: 100%;
+    max-height: 600px;
+    display: flex;
+    align-items: center;
+  }
+  
+  .qr-card {
+    background: white;
+    border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .qr-header {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 1.5rem 2rem;
+    text-align: center;
+  }
+  
+  .qr-header h1 {
+    font-size: 1.75rem;
+    margin: 0;
+  }
+  
+  .qr-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 2rem;
+    gap: 3rem;
+  }
+  
+  #qr-canvas-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 16px;
+  }
+  
+  #qr-canvas {
+    border: 3px solid #667eea;
+    border-radius: 12px;
+    padding: 1rem;
+    background: white;
+  }
+  
+  .qr-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2rem;
+  }
+  
+  .info-section {
+    margin: 0;
+  }
+  
+  .info-section label {
+    display: block;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .url-display {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+  }
+  
+  .url-display span {
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    color: #495057;
+    word-break: break-all;
+  }
+  
+  .code-display {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 2px solid #dee2e6;
+    text-align: center;
+  }
+  
+  .code-display span {
+    font-family: 'Courier New', monospace;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: #667eea;
+    letter-spacing: 0.3em;
+    text-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+  }
+  
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .qr-content {
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+    }
+    
+    .qr-header h1 {
+      font-size: 1.5rem;
+    }
+    
+    #qr-canvas {
+      width: 200px;
+      height: 200px;
+    }
+    
+    .code-display span {
+      font-size: 2rem;
+    }
+  }
+</style>

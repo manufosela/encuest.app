@@ -28,6 +28,9 @@ lerna-debug.log*
 firebase-debug.log*
 .firebase/
 
+# Generated Firebase config (CRÍTICO - NO SUBIR)
+public/lib/firebase-config.js
+
 # OS generated files
 .DS_Store
 .DS_Store?

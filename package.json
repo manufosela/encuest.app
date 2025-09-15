@@ -3,10 +3,13 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
+    "predev": "node scripts/generate-firebase-config.js",
     "dev": "astro dev",
+    "prebuild": "node scripts/generate-firebase-config.js",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "deploy": "firebase deploy --project encuest-app"
   },
   "dependencies": {
     "@astrojs/node": "^9.4.3",

@@ -42,8 +42,8 @@
     </div>
 
     <script type="module">
-      import { getSurvey } from '/src/lib/firebase/database.js';
-      import { generateQRCode } from '/src/lib/utils/qr.js';
+      import { getSurvey } from '/lib/database.js';
+      import { generateQRCode } from '/lib/qr.js';
       
       // Get surveyId from URL parameter
       const urlParams = new URLSearchParams(window.location.search);

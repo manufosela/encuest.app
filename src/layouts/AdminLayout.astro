@@ -50,9 +50,9 @@ const { title } = Astro.props;
     <script type="module">
       console.log('AdminLayout script loading...');
       
-      import { logout } from '/src/lib/firebase/auth.js';
-      import { onAuthChange } from '/src/lib/firebase/auth.js';
-      import { isUserAdmin } from '/src/lib/firebase/admin.js';
+      import { logout } from '/lib/auth.js';
+      import { onAuthChange } from '/lib/auth.js';
+      import { isUserAdmin } from '/lib/admin.js';
       
       console.log('Imports loaded successfully');
       

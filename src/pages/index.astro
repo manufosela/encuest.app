@@ -78,7 +78,7 @@
 		</dialog>
 		
 		<script type="module">
-			import { getAllSurveys } from '/src/lib/firebase/database.js';
+			import { getAllSurveys } from '/lib/database.js';
 			import QrScanner from 'https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js';
 			
 			const eventCodeInput = document.getElementById('event-code');
@@ -154,9 +154,11 @@
 						qrVideo,
 						result => {
 							// Check if it's a vote URL
-							if (result.data && result.data.includes('/vote/')) {
+							if (result.data && (result.data.includes('/vote?') || result.data.includes('/vote/'))) {
 								scanner.stop();
 								window.location.href = result.data;
+							} else {
+								console.log('QR detected but not a vote URL:', result.data);
 							}
 						},
 						{

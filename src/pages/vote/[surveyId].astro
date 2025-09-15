@@ -21,10 +21,7 @@ const { surveyId } = Astro.params;
         </div>
         
         <div id="voting-content" class="voting-content">
-          <div class="loading">
-            <div class="spinner"></div>
-            <p>Esperando pregunta...</p>
-          </div>
+          <!-- Content will be populated when there's an active question -->
         </div>
         
         <!-- Success message -->
@@ -32,6 +29,13 @@ const { surveyId } = Astro.params;
           <div class="success-icon">✅</div>
           <h2>¡Voto registrado!</h2>
           <p>Tu voto ha sido enviado correctamente.</p>
+          <div id="voted-option" class="voted-option" style="display: none;">
+            <p class="voted-label">Has votado:</p>
+            <p id="voted-text" class="voted-text"></p>
+          </div>
+          <button id="change-answer-btn" class="btn-secondary" style="display: none; margin-top: 1rem;">
+            🔄 Cambiar respuesta
+          </button>
         </div>
         
         <!-- Winner notification -->
@@ -52,60 +56,134 @@ const { surveyId } = Astro.params;
         submitVote,
         getSurvey,
         listenToWinnerNotification,
-        clearWinnerNotification
+        clearWinnerNotification,
+        hasUserVoted,
+        getUserVote,
+        getQuestionWinner,
+        listenToSurvey
       } from '/src/lib/firebase/database.js';
       
       const surveyId = window.location.pathname.split('/').pop();
-      const userId = localStorage.getItem('userId') || generateUserId();
+      
+      // Check if we're in test mode and use provided userId
+      const urlParams = new URLSearchParams(window.location.search);
+      const testUserId = urlParams.get('userId');
+      const isTestMode = urlParams.get('test') === 'true';
+      
+      const userId = testUserId || localStorage.getItem('userId') || generateUserId();
       
       function generateUserId() {
         const id = 'user_' + Math.random().toString(36).substr(2, 9) + Date.now();
-        localStorage.setItem('userId', id);
+        if (!isTestMode) {
+          localStorage.setItem('userId', id);
+        }
         return id;
       }
       
-      let currentQuestion = null;
-      let hasVoted = false;
-      
-      // Load survey info
-      async function loadSurveyInfo() {
-        try {
-          const survey = await getSurvey(surveyId);
-          if (survey) {
-            document.getElementById('survey-name').textContent = survey.name;
-          }
-        } catch (error) {
-          console.error('Error loading survey:', error);
-        }
+      // In test mode, don't persist to localStorage to ensure unique users
+      if (!isTestMode && !localStorage.getItem('userId')) {
+        localStorage.setItem('userId', userId);
       }
       
+      
+      let currentQuestion = null;
+      let hasVoted = false;
+      let currentSurvey = null;
+      
+      // Listen to survey changes in real-time
+      const unsubscribeSurvey = listenToSurvey(surveyId, (survey) => {
+        if (survey) {
+          currentSurvey = survey;
+          document.getElementById('survey-name').textContent = survey.name;
+          
+          // Update change answer button visibility if user has already voted
+          if (hasVoted) {
+            const changeBtn = document.getElementById('change-answer-btn');
+            if (changeBtn) {
+              if (currentSurvey.allowChangeAnswer && currentQuestion && currentQuestion.votingEnabled) {
+                changeBtn.style.display = 'inline-block';
+              } else {
+                changeBtn.style.display = 'none';
+              }
+            }
+          }
+        }
+      });
+      
       // Listen to active question
-      const unsubscribeQuestion = listenToActiveQuestion(surveyId, (question) => {
+      const unsubscribeQuestion = listenToActiveQuestion(surveyId, async (question) => {
         const votingContent = document.getElementById('voting-content');
         const voteSuccess = document.getElementById('vote-success');
         
         if (!question || !question.votingEnabled) {
-          votingContent.innerHTML = `
-            <div class="loading">
-              <div class="spinner"></div>
-              <p>Esperando pregunta...</p>
-            </div>
-          `;
+          // No active question - clear content but keep listening
+          votingContent.innerHTML = '';
           hasVoted = false;
           voteSuccess.style.display = 'none';
+          // Also hide winner notification when no active question
+          const winnerNotification = document.getElementById('winner-notification');
+          if (winnerNotification) {
+            winnerNotification.style.display = 'none';
+          }
           return;
         }
         
-        // New question - reset vote state
-        if (!currentQuestion || currentQuestion.id !== question.id) {
+        // Always check vote status when question data changes
+        const isNewQuestion = !currentQuestion || currentQuestion.id !== question.id;
+        
+        if (isNewQuestion) {
           currentQuestion = question;
+          // Reset winner notification for new question
+          const winnerNotification = document.getElementById('winner-notification');
+          if (winnerNotification) {
+            winnerNotification.style.display = 'none';
+          }
+        }
+        
+        // Always verify current vote status from database
+        try {
+          hasVoted = await hasUserVoted(surveyId, question.id, userId);
+          
+          // Also check if user is winner for this question
+          if (hasVoted) {
+            // Get which option the user voted for
+            const votedOptionIndex = await getUserVote(surveyId, question.id, userId);
+            if (votedOptionIndex !== null && question.options[votedOptionIndex]) {
+              document.getElementById('voted-text').textContent = question.options[votedOptionIndex];
+              document.getElementById('voted-option').style.display = 'block';
+            }
+            
+            const winner = await getQuestionWinner(surveyId, question.id);
+            if (winner && winner.userId === userId) {
+              // User is the winner, show winner notification
+              const winnerNotification = document.getElementById('winner-notification');
+              document.getElementById('winner-message').textContent = '¡Felicidades! Has sido seleccionado como ganador de esta pregunta.';
+              winnerNotification.style.display = 'flex';
+            }
+          } else {
+            // User hasn't voted or votes were reset - hide success message
+            voteSuccess.style.display = 'none';
+            document.getElementById('change-answer-btn').style.display = 'none';
+            document.getElementById('voted-option').style.display = 'none';
+          }
+        } catch (error) {
+          console.error('Error checking vote status:', error);
           hasVoted = false;
           voteSuccess.style.display = 'none';
+          document.getElementById('voted-option').style.display = 'none';
         }
         
         if (hasVoted) {
           voteSuccess.style.display = 'block';
           votingContent.innerHTML = '';
+          
+          // Show change answer button if allowed
+          const changeBtn = document.getElementById('change-answer-btn');
+          if (currentSurvey && currentSurvey.allowChangeAnswer && question.votingEnabled) {
+            changeBtn.style.display = 'inline-block';
+          } else {
+            changeBtn.style.display = 'none';
+          }
           return;
         }
         
@@ -140,10 +218,14 @@ const { surveyId } = Astro.params;
               await submitVote(surveyId, question.id, optionIndex, userId);
               hasVoted = true;
               
-              // Show success message
+              // Show success message with voted option
               setTimeout(() => {
                 voteSuccess.style.display = 'block';
                 votingContent.innerHTML = '';
+                
+                // Show what was voted
+                document.getElementById('voted-text').textContent = question.options[optionIndex];
+                document.getElementById('voted-option').style.display = 'block';
               }, 500);
               
             } catch (error) {
@@ -174,13 +256,77 @@ const { surveyId } = Astro.params;
         document.getElementById('winner-notification').style.display = 'none';
       });
       
-      // Load initial data
-      loadSurveyInfo();
+      // Change answer button
+      document.getElementById('change-answer-btn').addEventListener('click', () => {
+        hasVoted = false;
+        document.getElementById('vote-success').style.display = 'none';
+        // This will trigger the active question listener to show voting interface again
+        const votingContent = document.getElementById('voting-content');
+        if (currentQuestion && currentQuestion.votingEnabled) {
+          // Re-render voting interface
+          const kahootColors = ['#26890C', '#E21B3C', '#1368CE', '#FFD602', '#FF8C00', '#9C27B0', '#00BCD4', '#FF5722'];
+          
+          votingContent.innerHTML = `
+            <div class="question-container">
+              <h2 class="question-title">${currentQuestion.text}</h2>
+              
+              <div class="kahoot-grid">
+                ${currentQuestion.options.map((option, index) => `
+                  <button class="kahoot-btn" data-index="${index}" style="background-color: ${kahootColors[index % kahootColors.length]};">
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          `;
+          
+          // Re-add click listeners
+          document.querySelectorAll('.kahoot-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              if (hasVoted) return;
+              
+              const optionIndex = parseInt(btn.dataset.index);
+              
+              // Disable all buttons
+              document.querySelectorAll('.kahoot-btn').forEach(b => b.disabled = true);
+              btn.classList.add('selected');
+              
+              try {
+                await submitVote(surveyId, currentQuestion.id, optionIndex, userId);
+                hasVoted = true;
+                
+                // Show success message with voted option
+                setTimeout(() => {
+                  const voteSuccess = document.getElementById('vote-success');
+                  voteSuccess.style.display = 'block';
+                  votingContent.innerHTML = '';
+                  
+                  // Show what was voted
+                  document.getElementById('voted-text').textContent = currentQuestion.options[optionIndex];
+                  document.getElementById('voted-option').style.display = 'block';
+                  
+                  // Show change button if allowed
+                  const changeBtn = document.getElementById('change-answer-btn');
+                  if (currentSurvey && currentSurvey.allowChangeAnswer && currentQuestion.votingEnabled) {
+                    changeBtn.style.display = 'inline-block';
+                  }
+                }, 500);
+                
+              } catch (error) {
+                console.error('Error submitting vote:', error);
+                // Re-enable buttons on error
+                document.querySelectorAll('.kahoot-btn').forEach(b => b.disabled = false);
+                btn.classList.remove('selected');
+              }
+            });
+          });
+        }
+      });
       
       // Cleanup on page unload
       window.addEventListener('beforeunload', () => {
         unsubscribeQuestion();
         unsubscribeWinner();
+        unsubscribeSurvey();
       });
     </script>
   </body>

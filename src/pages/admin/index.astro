@@ -29,6 +29,13 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
             <label for="survey-description">Descripción:</label>
             <textarea id="survey-description" rows="3"></textarea>
           </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="allow-change-answer" />
+              <span class="checkmark"></span>
+              Permitir a los usuarios cambiar su respuesta
+            </label>
+          </div>
           <div class="modal-footer">
             <button type="button" class="btn-secondary close-btn">Cancelar</button>
             <button type="submit" class="btn-primary">Crear Encuesta</button>
@@ -84,10 +91,23 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     <!-- Error Dialog -->
     <dialog id="error-dialog" class="error-dialog">
       <div class="dialog-content">
-        <div class="dialog-icon">⚠️</div>
+        <div class="dialog-icon" id="error-dialog-icon">⚠️</div>
         <h2 id="dialog-title">Error</h2>
         <p id="dialog-message">Ha ocurrido un error</p>
         <button id="dialog-close" class="btn-dialog">Entendido</button>
+      </div>
+    </dialog>
+    
+    <!-- Confirmation Dialog -->
+    <dialog id="confirm-dialog" class="error-dialog">
+      <div class="dialog-content">
+        <div class="dialog-icon">⚠️</div>
+        <h2 id="confirm-title">Confirmar acción</h2>
+        <p id="confirm-message">¿Estás seguro?</p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="btn-secondary">Cancelar</button>
+          <button id="confirm-accept" class="btn-danger">Confirmar</button>
+        </div>
       </div>
     </dialog>
   </div>
@@ -112,6 +132,35 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     document.getElementById('error-dialog').showModal();
   }
   
+  // Confirmation dialog functions
+  function showConfirmDialog(title, message) {
+    return new Promise((resolve) => {
+      document.getElementById('confirm-title').textContent = title;
+      document.getElementById('confirm-message').textContent = message;
+      document.getElementById('confirm-dialog').showModal();
+      
+      const handleCancel = () => {
+        document.getElementById('confirm-dialog').close();
+        resolve(false);
+        cleanup();
+      };
+      
+      const handleAccept = () => {
+        document.getElementById('confirm-dialog').close();
+        resolve(true);
+        cleanup();
+      };
+      
+      const cleanup = () => {
+        document.getElementById('confirm-cancel').removeEventListener('click', handleCancel);
+        document.getElementById('confirm-accept').removeEventListener('click', handleAccept);
+      };
+      
+      document.getElementById('confirm-cancel').addEventListener('click', handleCancel);
+      document.getElementById('confirm-accept').addEventListener('click', handleAccept);
+    });
+  }
+  
   // Dialog close handler
   document.getElementById('dialog-close').addEventListener('click', () => {
     document.getElementById('error-dialog').close();
@@ -121,6 +170,13 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   document.getElementById('error-dialog').addEventListener('click', (e) => {
     if (e.target.id === 'error-dialog') {
       document.getElementById('error-dialog').close();
+    }
+  });
+  
+  // Close confirm dialog on backdrop click
+  document.getElementById('confirm-dialog').addEventListener('click', (e) => {
+    if (e.target.id === 'confirm-dialog') {
+      document.getElementById('confirm-dialog').close();
     }
   });
   
@@ -182,7 +238,12 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   
   // Delete survey
   window.deleteSurveyHandler = async (surveyId) => {
-    if (confirm('¿Estás seguro de eliminar esta encuesta?')) {
+    const confirmed = await showConfirmDialog(
+      'Eliminar Encuesta',
+      '¿Estás seguro de eliminar esta encuesta? Esta acción no se puede deshacer.'
+    );
+    
+    if (confirmed) {
       await deleteSurvey(surveyId);
       loadSurveys();
     }
@@ -190,7 +251,12 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   
   // Delete question
   window.deleteQuestionHandler = async (questionId) => {
-    if (confirm('¿Estás seguro de eliminar esta pregunta?')) {
+    const confirmed = await showConfirmDialog(
+      'Eliminar Pregunta',
+      '¿Estás seguro de eliminar esta pregunta? Esta acción no se puede deshacer.'
+    );
+    
+    if (confirmed) {
       await deleteQuestion(currentSurveyId, questionId);
       viewQuestions(currentSurveyId);
     }
@@ -228,9 +294,10 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     e.preventDefault();
     const name = document.getElementById('survey-name').value;
     const description = document.getElementById('survey-description').value;
+    const allowChangeAnswer = document.getElementById('allow-change-answer').checked;
     
     try {
-      await createSurvey({ name, description });
+      await createSurvey({ name, description, allowChangeAnswer });
       document.getElementById('survey-modal').classList.remove('active');
       e.target.reset();
       loadSurveys();
@@ -476,6 +543,22 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     border-radius: 4px;
   }
   
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #333;
+  }
+  
+  .checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    transform: scale(1.2);
+    accent-color: #667eea;
+  }
+  
   #add-option-btn {
     margin-top: 0.5rem;
   }
@@ -690,6 +773,53 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   
   .error-dialog .btn-dialog:active {
     transform: translateY(0);
+  }
+  
+  /* Confirmation actions */
+  .confirm-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+  }
+  
+  .confirm-actions .btn-secondary {
+    background: #f8f9fa;
+    color: #495057;
+    border: 2px solid #e9ecef;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    min-width: 100px;
+  }
+  
+  .confirm-actions .btn-secondary:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
+  }
+  
+  .confirm-actions .btn-danger {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    min-width: 100px;
+    box-shadow: 0 3px 10px rgba(220, 53, 69, 0.3);
+  }
+  
+  .confirm-actions .btn-danger:hover {
+    background: linear-gradient(135deg, #c82333, #a71e2a);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
   }
   
   /* Animation for error dialog */

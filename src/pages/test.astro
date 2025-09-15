@@ -1,0 +1,442 @@
+---
+export const prerender = false;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test de Votación Múltiple - Encuestapp</title>
+  </head>
+  <body>
+    <div class="test-container">
+      <div class="test-header">
+        <h1>🧪 Test de Votación Múltiple</h1>
+        <p>Simula 6 usuarios diferentes votando simultaneamente</p>
+        <div class="test-controls">
+          <label for="survey-select">Seleccionar encuesta:</label>
+          <select id="survey-select">
+            <option value="">Cargando encuestas...</option>
+          </select>
+          <button id="load-survey" class="btn-primary">Cargar en todos los iframes</button>
+        </div>
+      </div>
+      
+      <div class="devices-grid">
+        <div class="device-frame" data-user="1">
+          <div class="device-header">
+            <div class="device-name">Usuario 1</div>
+            <div class="device-status" id="status-1">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-1" src="about:blank" title="Usuario 1" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+        
+        <div class="device-frame" data-user="2">
+          <div class="device-header">
+            <div class="device-name">Usuario 2</div>
+            <div class="device-status" id="status-2">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-2" src="about:blank" title="Usuario 2" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+        
+        <div class="device-frame" data-user="3">
+          <div class="device-header">
+            <div class="device-name">Usuario 3</div>
+            <div class="device-status" id="status-3">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-3" src="about:blank" title="Usuario 3" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+        
+        <div class="device-frame" data-user="4">
+          <div class="device-header">
+            <div class="device-name">Usuario 4</div>
+            <div class="device-status" id="status-4">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-4" src="about:blank" title="Usuario 4" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+        
+        <div class="device-frame" data-user="5">
+          <div class="device-header">
+            <div class="device-name">Usuario 5</div>
+            <div class="device-status" id="status-5">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-5" src="about:blank" title="Usuario 5" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+        
+        <div class="device-frame" data-user="6">
+          <div class="device-header">
+            <div class="device-name">Usuario 6</div>
+            <div class="device-status" id="status-6">Esperando...</div>
+          </div>
+          <div class="iframe-container">
+            <iframe id="iframe-6" src="about:blank" title="Usuario 6" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Dialog -->
+    <dialog id="alert-dialog" class="alert-dialog">
+      <div class="dialog-content">
+        <div class="dialog-icon">💡</div>
+        <h2 id="alert-title">Información</h2>
+        <p id="alert-message">Mensaje</p>
+        <button id="alert-close" class="btn-dialog">Entendido</button>
+      </div>
+    </dialog>
+
+    <script type="module">
+      import { getAllSurveys } from '/src/lib/firebase/database.js';
+      
+      // Alert function
+      function showAlert(title, message) {
+        document.getElementById('alert-title').textContent = title;
+        document.getElementById('alert-message').textContent = message;
+        document.getElementById('alert-dialog').showModal();
+      }
+      
+      // Alert close handler
+      document.getElementById('alert-close').addEventListener('click', () => {
+        document.getElementById('alert-dialog').close();
+      });
+      
+      // Load surveys list
+      async function loadSurveys() {
+        try {
+          const surveys = await getAllSurveys();
+          const select = document.getElementById('survey-select');
+          
+          if (Object.keys(surveys).length === 0) {
+            select.innerHTML = '<option value="">No hay encuestas disponibles</option>';
+            return;
+          }
+          
+          select.innerHTML = '<option value="">Selecciona una encuesta</option>' +
+            Object.entries(surveys).map(([id, survey]) => 
+              `<option value="${id}">${survey.name} (${survey.code || 'Sin código'})</option>`
+            ).join('');
+            
+        } catch (error) {
+          console.error('Error loading surveys:', error);
+          document.getElementById('survey-select').innerHTML = '<option value="">Error al cargar encuestas</option>';
+        }
+      }
+      
+      // Load survey in all iframes
+      document.getElementById('load-survey').addEventListener('click', () => {
+        const surveyId = document.getElementById('survey-select').value;
+        if (!surveyId) {
+          showAlert('Selección requerida', 'Por favor selecciona una encuesta');
+          return;
+        }
+        
+        // Load same survey in all iframes with unique parameters
+        for (let i = 1; i <= 6; i++) {
+          const iframe = document.getElementById(`iframe-${i}`);
+          const status = document.getElementById(`status-${i}`);
+          
+          status.textContent = 'Cargando...';
+          status.className = 'device-status loading';
+          
+          // Create unique URL with timestamp and user ID to ensure separate localStorage
+          const timestamp = Date.now();
+          const uniqueParam = `test_user_${i}_${timestamp}`;
+          iframe.src = `/vote/${surveyId}?userId=${uniqueParam}&test=true&frame=${i}`;
+          
+          // Update status when iframe loads
+          iframe.onload = () => {
+            status.textContent = 'Listo para votar';
+            status.className = 'device-status ready';
+          };
+          
+          iframe.onerror = () => {
+            status.textContent = 'Error al cargar';
+            status.className = 'device-status error';
+          };
+        }
+      });
+      
+      // Load surveys on page load
+      loadSurveys();
+    </script>
+  </body>
+</html>
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    padding: 1rem;
+  }
+  
+  .test-container {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  
+  .test-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    background: white;
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  }
+  
+  .test-header h1 {
+    font-size: 2.5rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+  }
+  
+  .test-header p {
+    color: #666;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+  }
+  
+  .test-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  .test-controls label {
+    font-weight: 600;
+    color: #555;
+  }
+  
+  .test-controls select {
+    padding: 0.75rem 1rem;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    font-size: 1rem;
+    min-width: 250px;
+    background: white;
+  }
+  
+  .test-controls select:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  }
+  
+  .devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+  
+  .device-frame {
+    background: #222;
+    border-radius: 20px;
+    padding: 1rem;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .device-frame::before {
+    content: '';
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 4px;
+    background: #444;
+    border-radius: 2px;
+  }
+  
+  .device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0;
+  }
+  
+  .device-name {
+    color: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  
+  .device-status {
+    color: #999;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.1);
+  }
+  
+  .device-status.loading {
+    color: #ffd602;
+    background: rgba(255, 214, 2, 0.2);
+  }
+  
+  .device-status.ready {
+    color: #26890c;
+    background: rgba(38, 137, 12, 0.2);
+  }
+  
+  .iframe-container {
+    width: 100%;
+    height: 600px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+  }
+  
+  .device-frame iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+  
+  .device-status.error {
+    color: #e21b3c;
+    background: rgba(226, 27, 60, 0.2);
+  }
+  
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .devices-grid {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    
+    .iframe-container {
+      height: 500px;
+    }
+    
+    .test-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .test-controls select {
+      min-width: auto;
+      width: 100%;
+    }
+    
+    .btn-primary {
+      width: 100%;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .devices-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .test-header h1 {
+      font-size: 2rem;
+    }
+    
+    .iframe-container {
+      height: 450px;
+    }
+  }
+  
+  /* Alert Dialog */
+  .alert-dialog {
+    padding: 0;
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    max-width: 400px;
+    width: 90%;
+  }
+  
+  .alert-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+  
+  .dialog-content {
+    padding: 2rem;
+    text-align: center;
+    background: white;
+    border-radius: 16px;
+  }
+  
+  .dialog-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  }
+  
+  .alert-dialog h2 {
+    margin: 0 0 1rem 0;
+    color: #667eea;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+  
+  .alert-dialog p {
+    margin: 0 0 2rem 0;
+    color: #6c757d;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  
+  .btn-dialog {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 120px;
+  }
+  
+  .btn-dialog:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  }
+</style>

@@ -71,15 +71,45 @@ body {
   font-size: 1.2rem;
   font-weight: 700;
   color: white;
-  margin-top: 1rem;
   padding: 0.75rem 1.5rem;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 25px;
   display: inline-block;
   backdrop-filter: blur(10px);
   text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  align-self: center;
   flex-shrink: 0;
+}
+
+.fullscreen-container .bottom-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.fullscreen-container .winner-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  border-radius: 25px;
+  box-shadow: 0 4px 15px rgba(255, 165, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.fullscreen-container .winner-icon {
+  font-size: 1.2rem;
+}
+
+.fullscreen-container .winner-text {
+  color: #8B4513;
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-shadow: 0 1px 2px rgba(139, 69, 19, 0.3);
 }
 
 .container {
@@ -256,6 +286,35 @@ body {
 .success-message p {
   color: #666;
   font-size: 1.125rem;
+}
+
+/* Voted Option Display */
+.voted-option {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  border-radius: 12px;
+  border: 2px solid #dee2e6;
+}
+
+.voted-label {
+  color: #6c757d;
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.voted-text {
+  color: #495057;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
 }
 
 /* Winner Notification */

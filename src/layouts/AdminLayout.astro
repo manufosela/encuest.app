@@ -97,9 +97,19 @@ const { title } = Astro.props;
           
         } catch (error) {
           console.error('Error in admin check:', error);
+          
+          // If main content is already visible (user was previously authenticated), 
+          // don't show error dialog to avoid disrupting the user session
+          const mainContent = document.getElementById('main-content');
+          if (mainContent && mainContent.style.display === 'block') {
+            console.log('User was previously authenticated, ignoring temporary error');
+            document.getElementById('auth-loading').style.display = 'none';
+            return;
+          }
+          
           // Hide loading on error
           document.getElementById('auth-loading').style.display = 'none';
-          showErrorDialog('Error de Verificación', 'Error al verificar permisos. Intenta de nuevo.');
+          showErrorDialog('Error de Verificación', 'Error temporal al verificar permisos. Intenta recargar la página.');
         }
       });
       
@@ -112,9 +122,16 @@ const { title } = Astro.props;
       
       // Dialog close handler
       document.getElementById('dialog-close').addEventListener('click', async () => {
-        document.getElementById('error-dialog').close();
-        await logout();
-        window.location.href = '/admin/login';
+        const dialog = document.getElementById('error-dialog');
+        const dialogTitle = document.getElementById('dialog-title').textContent;
+        dialog.close();
+        
+        // Only logout and redirect if it's an access denied error
+        if (dialogTitle.includes('Acceso Denegado')) {
+          await logout();
+          window.location.href = '/admin/login';
+        }
+        // For verification errors, just close the dialog and let user continue
       });
       
       // Close on backdrop click

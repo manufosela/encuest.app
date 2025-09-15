@@ -91,10 +91,35 @@ export const toggleVoting = async (surveyId, enabled) => {
   await updateSurvey(surveyId, { votingEnabled: enabled });
 };
 
+export const deactivateQuestion = async (surveyId) => {
+  await updateSurvey(surveyId, { 
+    activeQuestionId: null,
+    votingEnabled: false 
+  });
+};
+
 // Voting operations
 export const submitVote = async (surveyId, questionId, optionIndex, userId) => {
   const voteRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes/${userId}`);
   await set(voteRef, optionIndex);
+};
+
+export const hasUserVoted = async (surveyId, questionId, userId) => {
+  const voteRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes/${userId}`);
+  const snapshot = await get(voteRef);
+  return snapshot.exists();
+};
+
+export const getUserVote = async (surveyId, questionId, userId) => {
+  const voteRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes/${userId}`);
+  const snapshot = await get(voteRef);
+  return snapshot.val(); // Returns the option index or null
+};
+
+export const getQuestionWinner = async (surveyId, questionId) => {
+  const winnerRef = ref(database, `surveys/${surveyId}/questions/${questionId}/winner`);
+  const snapshot = await get(winnerRef);
+  return snapshot.val();
 };
 
 // Real-time listeners
@@ -184,8 +209,19 @@ export const selectRandomWinner = async (surveyId, questionId, optionIndex) => {
 };
 
 export const clearWinner = async (surveyId, questionId) => {
+  // Get the current winner before removing
   const winnerRef = ref(database, `surveys/${surveyId}/questions/${questionId}/winner`);
+  const winnerSnapshot = await get(winnerRef);
+  const winner = winnerSnapshot.val();
+  
+  // Remove winner from question
   await remove(winnerRef);
+  
+  // Also clear winner notification if exists
+  if (winner && winner.userId) {
+    const notificationRef = ref(database, `winners/${winner.userId}`);
+    await remove(notificationRef);
+  }
 };
 
 // Listen to winner notifications for a user
@@ -201,4 +237,39 @@ export const listenToWinnerNotification = (userId, callback) => {
 export const clearWinnerNotification = async (userId) => {
   const notificationRef = ref(database, `winners/${userId}`);
   await remove(notificationRef);
+};
+
+// Clear all winner notifications (for manual cleanup)
+export const clearAllWinnerNotifications = async () => {
+  const winnersRef = ref(database, 'winners');
+  await remove(winnersRef);
+  console.log('All winner notifications cleared');
+};
+
+// Reset votes for a specific question
+export const resetQuestionVotes = async (surveyId, questionId) => {
+  try {
+    // Get the current winner before removing
+    const winnerRef = ref(database, `surveys/${surveyId}/questions/${questionId}/winner`);
+    const winnerSnapshot = await get(winnerRef);
+    const winner = winnerSnapshot.val();
+    
+    // Remove all votes
+    const votesRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes`);
+    await remove(votesRef);
+    
+    // Remove winner
+    await remove(winnerRef);
+    
+    // Clear winner notification if exists
+    if (winner && winner.userId) {
+      const notificationRef = ref(database, `winners/${winner.userId}`);
+      await remove(notificationRef);
+    }
+    
+    console.log('Vote reset completed successfully');
+  } catch (error) {
+    console.error('Error in resetQuestionVotes:', error);
+    throw error;
+  }
 };

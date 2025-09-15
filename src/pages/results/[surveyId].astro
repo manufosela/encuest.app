@@ -20,10 +20,7 @@ const { surveyId } = Astro.params;
       </div>
       
       <div id="results-content" class="results-content">
-        <div class="loading">
-          <div class="spinner"></div>
-          <p>Esperando pregunta activa...</p>
-        </div>
+        <!-- Content will be populated when there's an active question -->
       </div>
     </div>
 
@@ -39,6 +36,7 @@ const { surveyId } = Astro.params;
       let currentQuestion = null;
       let unsubscribeVotes = null;
       let currentChart = null;
+      let lastVotes = null;
       
       // Load survey info
       async function loadSurveyInfo() {
@@ -57,12 +55,8 @@ const { surveyId } = Astro.params;
         const resultsContent = document.getElementById('results-content');
         
         if (!question) {
-          resultsContent.innerHTML = `
-            <div class="loading">
-              <div class="spinner"></div>
-              <p>Esperando pregunta activa...</p>
-            </div>
-          `;
+          // No active question - clear content but keep listening
+          resultsContent.innerHTML = '';
           
           // Clean up votes listener
           if (unsubscribeVotes) {
@@ -75,6 +69,9 @@ const { surveyId } = Astro.params;
             currentChart.destroy();
             currentChart = null;
           }
+          
+          // Reset current question
+          currentQuestion = null;
           return;
         }
         
@@ -95,8 +92,20 @@ const { surveyId } = Astro.params;
           
           // Listen to votes for this question
           unsubscribeVotes = listenToVotes(surveyId, question.id, (votes) => {
-            displayResults(question, votes);
+            lastVotes = votes;
+            displayResults(currentQuestion, votes);
           });
+        } else {
+          // Same question but check if question data changed (e.g., winner field)
+          const newQuestionData = JSON.stringify(question);
+          if (currentQuestion && JSON.stringify(currentQuestion) !== newQuestionData) {
+            console.log('Question data changed, updating display...');
+            currentQuestion = question;
+            // Force update with last known votes
+            if (lastVotes !== null) {
+              displayResults(currentQuestion, lastVotes);
+            }
+          }
         }
       });
       
@@ -114,6 +123,7 @@ const { surveyId } = Astro.params;
         
         // Check if we need to rebuild the HTML (new question)
         const questionHTML = question.text + question.votingEnabled;
+        const winnerHTML = question.winner ? JSON.stringify(question.winner) : 'no-winner';
         const needsRebuild = currentQuestionHTML !== questionHTML || !document.getElementById('resultsChart');
         
         // Check if options are too long (more than 15 characters average or any option > 25 chars)
@@ -151,21 +161,19 @@ const { surveyId } = Astro.params;
                 </div>
               </div>
               
-              <div class="vote-summary" id="vote-summary">
-                Total: ${totalVotes} ${totalVotes === 1 ? 'voto' : 'votos'}
-              </div>
-              
-              <div id="winner-section">
-                ${question.winner ? `
-                  <div class="winner-section">
-                    <h3>🎉 Ganador Seleccionado</h3>
-                    <div class="winner-info">
-                      <p><strong>Opción ganadora:</strong> ${question.options[question.winner.optionIndex]}</p>
-                      <p><strong>Usuario:</strong> ${question.winner.userId}</p>
-                      <p><strong>Seleccionado:</strong> ${new Date(question.winner.selectedAt).toLocaleString()}</p>
+              <div class="bottom-info">
+                <div class="vote-summary" id="vote-summary">
+                  Total: ${totalVotes} ${totalVotes === 1 ? 'voto' : 'votos'}
+                </div>
+                
+                <div id="winner-section">
+                  ${question.winner ? `
+                    <div class="winner-badge">
+                      <span class="winner-icon">🏆</span>
+                      <span class="winner-text">Ganador: ${question.options[question.winner.optionIndex]}</span>
                     </div>
-                  </div>
-                ` : ''}
+                  ` : ''}
+                </div>
               </div>
             </div>
           `;
@@ -173,26 +181,22 @@ const { surveyId } = Astro.params;
           // Reset chart since HTML was rebuilt
           currentChart = null;
         } else {
-          // Just update the vote summary and winner section
+          // Just update the vote summary
           const voteSummary = document.getElementById('vote-summary');
           if (voteSummary) {
             voteSummary.textContent = `Total: ${totalVotes} ${totalVotes === 1 ? 'voto' : 'votos'}`;
           }
-          
-          // Update winner section
-          const winnerSection = document.getElementById('winner-section');
-          if (winnerSection) {
-            winnerSection.innerHTML = question.winner ? `
-              <div class="winner-section">
-                <h3>🎉 Ganador Seleccionado</h3>
-                <div class="winner-info">
-                  <p><strong>Opción ganadora:</strong> ${question.options[question.winner.optionIndex]}</p>
-                  <p><strong>Usuario:</strong> ${question.winner.userId}</p>
-                  <p><strong>Seleccionado:</strong> ${new Date(question.winner.selectedAt).toLocaleString()}</p>
-                </div>
-              </div>
-            ` : '';
-          }
+        }
+        
+        // Always update winner section (regardless of rebuild)
+        const winnerSection = document.getElementById('winner-section');
+        if (winnerSection) {
+          winnerSection.innerHTML = question.winner ? `
+            <div class="winner-badge">
+              <span class="winner-icon">🏆</span>
+              <span class="winner-text">Ganador: ${question.options[question.winner.optionIndex]}</span>
+            </div>
+          ` : '';
         }
         
         // Create or update Chart.js chart

@@ -1,0 +1,778 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="Control - Encuestapp">
+  <div class="control-container">
+    <div class="control-header">
+      <h2 id="survey-name">Cargando encuesta...</h2>
+      <div class="control-links">
+        <a id="voting-link" href="#" target="_blank" class="link-badge">
+          📱 Página de votación
+        </a>
+        <a id="results-link" href="#" target="_blank" class="link-badge">
+          📊 Página de resultados
+        </a>
+      </div>
+    </div>
+    
+    <div class="control-panel">
+      <div class="voting-control">
+        <h3>Control de Votación</h3>
+        <label class="switch">
+          <input type="checkbox" id="voting-toggle" />
+          <span class="slider"></span>
+        </label>
+        <span id="voting-status">Votación deshabilitada</span>
+      </div>
+      
+      <div class="questions-section">
+        <h3>Preguntas Disponibles</h3>
+        <div id="questions-list" class="questions-list">
+          <!-- Questions will be loaded here -->
+        </div>
+      </div>
+      
+      <div class="active-question">
+        <h3>Pregunta Activa</h3>
+        <div id="active-question-display">
+          <p class="no-active">No hay pregunta activa</p>
+        </div>
+      </div>
+      
+      <div class="raffle-section">
+        <h3>Sorteo de Ganadores 🎲</h3>
+        <div id="raffle-controls">
+          <p class="raffle-info">Selecciona una pregunta y opción para sortear un ganador</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Error Dialog -->
+    <dialog id="error-dialog" class="error-dialog">
+      <div class="dialog-content">
+        <div class="dialog-icon">⚠️</div>
+        <h2 id="dialog-title">Error</h2>
+        <p id="dialog-message">Ha ocurrido un error</p>
+        <button id="dialog-close" class="btn-dialog">Entendido</button>
+      </div>
+    </dialog>
+  </div>
+</AdminLayout>
+
+<script type="module">
+  import { 
+    getSurvey,
+    setActiveQuestion,
+    toggleVoting,
+    listenToSurvey,
+    selectRandomWinner,
+    clearWinner,
+    getVotersByOption
+  } from '/src/lib/firebase/database.js';
+  
+  // Error dialog functions
+  function showErrorDialog(title, message) {
+    document.getElementById('dialog-title').textContent = title;
+    document.getElementById('dialog-message').textContent = message;
+    document.getElementById('error-dialog').showModal();
+  }
+  
+  // Dialog close handler
+  document.getElementById('dialog-close').addEventListener('click', () => {
+    document.getElementById('error-dialog').close();
+  });
+  
+  // Close on backdrop click
+  document.getElementById('error-dialog').addEventListener('click', (e) => {
+    if (e.target.id === 'error-dialog') {
+      document.getElementById('error-dialog').close();
+    }
+  });
+  
+  const urlParams = new URLSearchParams(window.location.search);
+  const surveyId = urlParams.get('survey');
+  
+  if (!surveyId) {
+    showErrorDialog('Error de Configuración', 'No se especificó encuesta en la URL.');
+    setTimeout(() => {
+      window.location.href = '/admin';
+    }, 2000);
+    throw new Error('No survey ID provided');
+  }
+  
+  let unsubscribe = null;
+  let currentSurvey = null;
+  
+  // Set up links
+  const baseUrl = window.location.origin;
+  document.getElementById('voting-link').href = `${baseUrl}/vote/${surveyId}`;
+  document.getElementById('results-link').href = `${baseUrl}/results/${surveyId}`;
+  
+  // Listen to survey changes
+  async function setupRealtimeListener() {
+    unsubscribe = listenToSurvey(surveyId, (survey) => {
+      console.log('Survey data received:', survey);
+      if (!survey) {
+        console.log('No survey data received');
+        return;
+      }
+      
+      currentSurvey = survey;
+      document.getElementById('survey-name').textContent = survey.name;
+      
+      // Update voting toggle
+      const votingToggle = document.getElementById('voting-toggle');
+      votingToggle.checked = survey.votingEnabled || false;
+      document.getElementById('voting-status').textContent = 
+        survey.votingEnabled ? 'Votación habilitada' : 'Votación deshabilitada';
+      
+      // Update questions list
+      if (survey.questions) {
+        const questionsList = document.getElementById('questions-list');
+        questionsList.innerHTML = Object.entries(survey.questions).map(([id, question]) => {
+          const isActive = survey.activeQuestionId === id;
+          return `
+            <div class="question-item ${isActive ? 'active' : ''}">
+              <div class="question-text">${question.text}</div>
+              <div class="question-options">
+                ${question.options.map((opt, i) => `<span class="option">${i + 1}. ${opt}</span>`).join('')}
+              </div>
+              <button 
+                onclick="activateQuestion('${id}')" 
+                class="btn-activate ${isActive ? 'btn-deactivate' : ''}"
+                ${isActive ? 'disabled' : ''}
+              >
+                ${isActive ? 'Activa' : 'Activar'}
+              </button>
+            </div>
+          `;
+        }).join('');
+      } else {
+        document.getElementById('questions-list').innerHTML = '<p class="no-data">No hay preguntas creadas</p>';
+      }
+      
+      // Update active question display
+      console.log('Active question ID:', survey.activeQuestionId);
+      console.log('Available questions:', survey.questions);
+      
+      if (survey.activeQuestionId && survey.questions && survey.questions[survey.activeQuestionId]) {
+        const activeQuestion = survey.questions[survey.activeQuestionId];
+        console.log('Active question found:', activeQuestion);
+        document.getElementById('active-question-display').innerHTML = `
+          <div class="active-question-card">
+            <h4>${activeQuestion.text}</h4>
+            <div class="options-display">
+              ${activeQuestion.options.map((opt, i) => `
+                <div class="option-item">${i + 1}. ${opt}</div>
+              `).join('')}
+            </div>
+            <div class="votes-count">
+              Votos: ${activeQuestion.votes ? Object.keys(activeQuestion.votes).length : 0}
+            </div>
+          </div>
+        `;
+      } else {
+        console.log('No active question found');
+        document.getElementById('active-question-display').innerHTML = '<p class="no-active">No hay pregunta activa</p>';
+      }
+      
+      // Update raffle section
+      updateRaffleSection(survey);
+    });
+  }
+  
+  // Update raffle section
+  function updateRaffleSection(survey) {
+    const raffleControls = document.getElementById('raffle-controls');
+    
+    if (!survey.questions || Object.keys(survey.questions).length === 0) {
+      raffleControls.innerHTML = '<p class="raffle-info">No hay preguntas disponibles para sorteo</p>';
+      return;
+    }
+    
+    raffleControls.innerHTML = `
+      <div class="raffle-form">
+        <div class="form-group">
+          <label for="raffle-question">Pregunta:</label>
+          <select id="raffle-question">
+            <option value="">Selecciona una pregunta...</option>
+            ${Object.entries(survey.questions).map(([id, question]) => 
+              `<option value="${id}">${question.text}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="raffle-option">Opción ganadora:</label>
+          <select id="raffle-option" disabled>
+            <option value="">Primero selecciona una pregunta</option>
+          </select>
+        </div>
+        <div class="raffle-actions">
+          <button id="raffle-btn" class="btn-raffle" disabled>🎲 Sortear Ganador</button>
+          <button id="clear-winner-btn" class="btn-clear" style="display:none;">❌ Limpiar Ganador</button>
+        </div>
+        <div id="raffle-result" class="raffle-result"></div>
+      </div>
+    `;
+    
+    // Question change handler
+    document.getElementById('raffle-question').addEventListener('change', async (e) => {
+      const questionId = e.target.value;
+      const optionSelect = document.getElementById('raffle-option');
+      const raffleBtn = document.getElementById('raffle-btn');
+      
+      if (!questionId) {
+        optionSelect.innerHTML = '<option value="">Primero selecciona una pregunta</option>';
+        optionSelect.disabled = true;
+        raffleBtn.disabled = true;
+        return;
+      }
+      
+      const question = survey.questions[questionId];
+      optionSelect.innerHTML = `
+        <option value="">Selecciona una opción...</option>
+        ${question.options.map((opt, i) => `<option value="${i}">${i + 1}. ${opt}</option>`).join('')}
+      `;
+      optionSelect.disabled = false;
+      
+      // Check if there's already a winner
+      if (question.winner) {
+        const winnerOption = question.options[question.winner.optionIndex];
+        document.getElementById('raffle-result').innerHTML = `
+          <div class="winner-display">
+            🏆 Ganador actual: <strong>${question.winner.userId}</strong><br>
+            Opción: <strong>${winnerOption}</strong><br>
+            <small>Seleccionado: ${new Date(question.winner.selectedAt).toLocaleString()}</small>
+          </div>
+        `;
+        document.getElementById('clear-winner-btn').style.display = 'inline-block';
+      } else {
+        document.getElementById('raffle-result').innerHTML = '';
+        document.getElementById('clear-winner-btn').style.display = 'none';
+      }
+    });
+    
+    // Option change handler
+    document.getElementById('raffle-option').addEventListener('change', async (e) => {
+      const questionId = document.getElementById('raffle-question').value;
+      const optionIndex = parseInt(e.target.value);
+      const raffleBtn = document.getElementById('raffle-btn');
+      
+      if (questionId && !isNaN(optionIndex)) {
+        try {
+          const voters = await getVotersByOption(surveyId, questionId, optionIndex);
+          raffleBtn.disabled = voters.length === 0;
+          raffleBtn.textContent = voters.length > 0 ? 
+            `🎲 Sortear entre ${voters.length} ${voters.length === 1 ? 'voto' : 'votos'}` : 
+            '🎲 No hay votos para esta opción';
+        } catch (error) {
+          raffleBtn.disabled = true;
+          raffleBtn.textContent = '🎲 Error al cargar votos';
+        }
+      } else {
+        raffleBtn.disabled = true;
+        raffleBtn.textContent = '🎲 Sortear Ganador';
+      }
+    });
+    
+    // Raffle button handler
+    document.getElementById('raffle-btn').addEventListener('click', async () => {
+      const questionId = document.getElementById('raffle-question').value;
+      const optionIndex = parseInt(document.getElementById('raffle-option').value);
+      
+      if (!questionId || isNaN(optionIndex)) return;
+      
+      try {
+        const result = await selectRandomWinner(surveyId, questionId, optionIndex);
+        const question = survey.questions[questionId];
+        const optionText = question.options[optionIndex];
+        
+        document.getElementById('raffle-result').innerHTML = `
+          <div class="winner-announcement">
+            🎉 <strong>¡Ganador seleccionado!</strong><br>
+            Usuario: <strong>${result.winnerId}</strong><br>
+            Opción: <strong>${optionText}</strong><br>
+            Seleccionado entre ${result.totalVoters} ${result.totalVoters === 1 ? 'voto' : 'votos'}
+          </div>
+        `;
+        
+        document.getElementById('clear-winner-btn').style.display = 'inline-block';
+      } catch (error) {
+        document.getElementById('raffle-result').innerHTML = `
+          <div class="error-message">❌ Error: ${error.message}</div>
+        `;
+      }
+    });
+    
+    // Clear winner button handler
+    document.getElementById('clear-winner-btn').addEventListener('click', async () => {
+      const questionId = document.getElementById('raffle-question').value;
+      
+      if (!questionId) return;
+      
+      try {
+        await clearWinner(surveyId, questionId);
+        document.getElementById('raffle-result').innerHTML = '';
+        document.getElementById('clear-winner-btn').style.display = 'none';
+      } catch (error) {
+        console.error('Error clearing winner:', error);
+      }
+    });
+  }
+  
+  // Activate question
+  window.activateQuestion = async (questionId) => {
+    await setActiveQuestion(surveyId, questionId);
+  };
+  
+  // Voting toggle
+  document.getElementById('voting-toggle').addEventListener('change', async (e) => {
+    await toggleVoting(surveyId, e.target.checked);
+  });
+  
+  // Initialize
+  console.log('Initializing control panel for survey:', surveyId);
+  setupRealtimeListener();
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    if (unsubscribe) unsubscribe();
+  });
+</script>
+
+<style>
+  .control-container {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e0e0e0;
+  }
+  
+  .control-header h2 {
+    margin: 0;
+  }
+  
+  .control-links {
+    display: flex;
+    gap: 1rem;
+  }
+  
+  .link-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #f0f0f0;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #333;
+    transition: background 0.3s;
+  }
+  
+  .link-badge:hover {
+    background: #e0e0e0;
+  }
+  
+  .control-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  
+  .voting-control {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+  }
+  
+  .voting-control h3 {
+    margin: 0;
+  }
+  
+  .questions-section {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+  }
+  
+  .questions-section h3 {
+    margin: 0 0 1rem 0;
+  }
+  
+  .questions-list {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  
+  .question-item {
+    background: white;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+    transition: all 0.3s;
+  }
+  
+  .question-item.active {
+    border-color: #28a745;
+    background: #f0fff4;
+  }
+  
+  .question-text {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  
+  .question-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .option {
+    padding: 0.25rem 0.5rem;
+    background: #e9ecef;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+  
+  .btn-activate {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+  
+  .btn-activate:hover:not(:disabled) {
+    background: #0056b3;
+  }
+  
+  .btn-deactivate {
+    background: #28a745;
+  }
+  
+  .btn-activate:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  
+  .active-question {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+  }
+  
+  .active-question h3 {
+    margin: 0 0 1rem 0;
+  }
+  
+  .active-question-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 2px solid #28a745;
+  }
+  
+  .active-question-card h4 {
+    margin: 0 0 1rem 0;
+    color: #28a745;
+  }
+  
+  .options-display {
+    margin-bottom: 1rem;
+  }
+  
+  .option-item {
+    padding: 0.5rem;
+    background: #f0f0f0;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+  }
+  
+  .votes-count {
+    font-weight: bold;
+    color: #007bff;
+    font-size: 1.125rem;
+  }
+  
+  .no-active, .no-data {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+  }
+  
+  /* Switch styles */
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+  }
+  
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+  }
+  
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+  }
+  
+  input:checked + .slider {
+    background-color: #28a745;
+  }
+  
+  input:checked + .slider:before {
+    transform: translateX(26px);
+  }
+  
+  #voting-status {
+    font-weight: 500;
+  }
+  
+  /* Raffle section styles */
+  .raffle-section {
+    grid-column: 1 / -1;
+    background: #fff3cd;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #ffeaa7;
+  }
+  
+  .raffle-section h3 {
+    margin: 0 0 1rem 0;
+    color: #856404;
+  }
+  
+  .raffle-info {
+    color: #856404;
+    margin: 0;
+    font-style: italic;
+  }
+  
+  .raffle-form {
+    display: grid;
+    gap: 1rem;
+  }
+  
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .form-group label {
+    font-weight: 500;
+    color: #856404;
+  }
+  
+  .form-group select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  .raffle-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .btn-raffle {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.3s;
+  }
+  
+  .btn-raffle:hover:not(:disabled) {
+    background: #218838;
+    transform: translateY(-1px);
+  }
+  
+  .btn-raffle:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  .btn-clear {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background 0.3s;
+  }
+  
+  .btn-clear:hover {
+    background: #c82333;
+  }
+  
+  .raffle-result {
+    margin-top: 1rem;
+  }
+  
+  .winner-announcement {
+    background: #d4edda;
+    color: #155724;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #c3e6cb;
+    text-align: center;
+    animation: pulse 0.5s ease-in-out;
+  }
+  
+  .winner-display {
+    background: #e2e6ea;
+    color: #383d41;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #c6c8ca;
+    text-align: center;
+  }
+  
+  .error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #f5c6cb;
+    text-align: center;
+  }
+  
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+  
+  /* Error Dialog Styles */
+  .error-dialog {
+    padding: 0;
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    max-width: 400px;
+    width: 90%;
+  }
+  
+  .error-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+  
+  .error-dialog .dialog-content {
+    padding: 2rem;
+    text-align: center;
+    background: white;
+    border-radius: 20px;
+  }
+  
+  .error-dialog .dialog-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  }
+  
+  .error-dialog h2 {
+    margin: 0 0 1rem 0;
+    color: #e53e3e;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+  
+  .error-dialog p {
+    margin: 0 0 2rem 0;
+    color: #4a5568;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  
+  .error-dialog .btn-dialog {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 120px;
+  }
+  
+  .error-dialog .btn-dialog:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  }
+  
+  .error-dialog .btn-dialog:active {
+    transform: translateY(0);
+  }
+  
+  /* Animation for error dialog */
+  .error-dialog[open] {
+    animation: dialogSlideIn 0.3s ease-out;
+  }
+  
+  @keyframes dialogSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.8) translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+</style>

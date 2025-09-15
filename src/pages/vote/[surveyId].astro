@@ -1,0 +1,187 @@
+---
+export const prerender = false;
+
+const { surveyId } = Astro.params;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Votación - Encuestapp</title>
+    <link rel="stylesheet" href="/css/survey.css">
+  </head>
+  <body>
+    <div class="container">
+      <div class="voting-card">
+        <div class="header">
+          <h1>🗳️ Encuestapp</h1>
+          <p id="survey-name">Cargando...</p>
+        </div>
+        
+        <div id="voting-content" class="voting-content">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Esperando pregunta...</p>
+          </div>
+        </div>
+        
+        <!-- Success message -->
+        <div id="vote-success" class="success-message" style="display: none;">
+          <div class="success-icon">✅</div>
+          <h2>¡Voto registrado!</h2>
+          <p>Tu voto ha sido enviado correctamente.</p>
+        </div>
+        
+        <!-- Winner notification -->
+        <div id="winner-notification" class="winner-notification" style="display: none;">
+          <div class="winner-content">
+            <div class="winner-icon">🎉</div>
+            <h2>¡Felicidades!</h2>
+            <p id="winner-message">Has sido seleccionado como ganador</p>
+            <button id="dismiss-winner" class="btn-primary">Entendido</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { 
+        listenToActiveQuestion,
+        submitVote,
+        getSurvey,
+        listenToWinnerNotification,
+        clearWinnerNotification
+      } from '/src/lib/firebase/database.js';
+      
+      const surveyId = window.location.pathname.split('/').pop();
+      const userId = localStorage.getItem('userId') || generateUserId();
+      
+      function generateUserId() {
+        const id = 'user_' + Math.random().toString(36).substr(2, 9) + Date.now();
+        localStorage.setItem('userId', id);
+        return id;
+      }
+      
+      let currentQuestion = null;
+      let hasVoted = false;
+      
+      // Load survey info
+      async function loadSurveyInfo() {
+        try {
+          const survey = await getSurvey(surveyId);
+          if (survey) {
+            document.getElementById('survey-name').textContent = survey.name;
+          }
+        } catch (error) {
+          console.error('Error loading survey:', error);
+        }
+      }
+      
+      // Listen to active question
+      const unsubscribeQuestion = listenToActiveQuestion(surveyId, (question) => {
+        const votingContent = document.getElementById('voting-content');
+        const voteSuccess = document.getElementById('vote-success');
+        
+        if (!question || !question.votingEnabled) {
+          votingContent.innerHTML = `
+            <div class="loading">
+              <div class="spinner"></div>
+              <p>Esperando pregunta...</p>
+            </div>
+          `;
+          hasVoted = false;
+          voteSuccess.style.display = 'none';
+          return;
+        }
+        
+        // New question - reset vote state
+        if (!currentQuestion || currentQuestion.id !== question.id) {
+          currentQuestion = question;
+          hasVoted = false;
+          voteSuccess.style.display = 'none';
+        }
+        
+        if (hasVoted) {
+          voteSuccess.style.display = 'block';
+          votingContent.innerHTML = '';
+          return;
+        }
+        
+        // Show voting interface
+        const kahootColors = ['#26890C', '#E21B3C', '#1368CE', '#FFD602', '#FF8C00', '#9C27B0', '#00BCD4', '#FF5722'];
+        
+        votingContent.innerHTML = `
+          <div class="question-container">
+            <h2 class="question-title">${question.text}</h2>
+            
+            <div class="kahoot-grid">
+              ${question.options.map((option, index) => `
+                <button class="kahoot-btn" data-index="${index}" style="background-color: ${kahootColors[index % kahootColors.length]};">
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        
+        // Add click listeners to buttons
+        document.querySelectorAll('.kahoot-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (hasVoted) return;
+            
+            const optionIndex = parseInt(btn.dataset.index);
+            
+            // Disable all buttons
+            document.querySelectorAll('.kahoot-btn').forEach(b => b.disabled = true);
+            btn.classList.add('selected');
+            
+            try {
+              await submitVote(surveyId, question.id, optionIndex, userId);
+              hasVoted = true;
+              
+              // Show success message
+              setTimeout(() => {
+                voteSuccess.style.display = 'block';
+                votingContent.innerHTML = '';
+              }, 500);
+              
+            } catch (error) {
+              console.error('Error submitting vote:', error);
+              // Re-enable buttons on error
+              document.querySelectorAll('.kahoot-btn').forEach(b => b.disabled = false);
+              btn.classList.remove('selected');
+            }
+          });
+        });
+      });
+      
+      // Listen for winner notifications
+      const unsubscribeWinner = listenToWinnerNotification(userId, (winner) => {
+        const winnerNotification = document.getElementById('winner-notification');
+        
+        if (winner) {
+          document.getElementById('winner-message').textContent = winner.message || '¡Felicidades! Has sido seleccionado como ganador.';
+          winnerNotification.style.display = 'flex';
+        } else {
+          winnerNotification.style.display = 'none';
+        }
+      });
+      
+      // Dismiss winner notification
+      document.getElementById('dismiss-winner').addEventListener('click', async () => {
+        await clearWinnerNotification(userId);
+        document.getElementById('winner-notification').style.display = 'none';
+      });
+      
+      // Load initial data
+      loadSurveyInfo();
+      
+      // Cleanup on page unload
+      window.addEventListener('beforeunload', () => {
+        unsubscribeQuestion();
+        unsubscribeWinner();
+      });
+    </script>
+  </body>
+</html>

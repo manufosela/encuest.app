@@ -1,0 +1,319 @@
+---
+export const prerender = false;
+
+const { surveyId } = Astro.params;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resultados - Encuestapp</title>
+    <link rel="stylesheet" href="/css/survey.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="results-card">
+        <div class="header">
+          <h1>📊 Resultados en Tiempo Real</h1>
+          <p id="survey-name">Cargando...</p>
+        </div>
+        
+        <div id="results-content" class="results-content">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Esperando pregunta activa...</p>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+
+    <script type="module">
+      import { 
+        listenToActiveQuestion,
+        listenToVotes,
+        getSurvey
+      } from '/src/lib/firebase/database.js';
+      
+      const surveyId = window.location.pathname.split('/').pop();
+      
+      let currentQuestion = null;
+      let unsubscribeVotes = null;
+      let currentChart = null;
+      
+      // Load survey info
+      async function loadSurveyInfo() {
+        try {
+          const survey = await getSurvey(surveyId);
+          if (survey) {
+            document.getElementById('survey-name').textContent = survey.name;
+          }
+        } catch (error) {
+          console.error('Error loading survey:', error);
+        }
+      }
+      
+      // Listen to active question
+      const unsubscribeQuestion = listenToActiveQuestion(surveyId, (question) => {
+        const resultsContent = document.getElementById('results-content');
+        
+        if (!question) {
+          resultsContent.innerHTML = `
+            <div class="loading">
+              <div class="spinner"></div>
+              <p>Esperando pregunta activa...</p>
+            </div>
+          `;
+          
+          // Clean up votes listener
+          if (unsubscribeVotes) {
+            unsubscribeVotes();
+            unsubscribeVotes = null;
+          }
+          
+          // Destroy chart
+          if (currentChart) {
+            currentChart.destroy();
+            currentChart = null;
+          }
+          return;
+        }
+        
+        // New question - setup votes listener
+        if (!currentQuestion || currentQuestion.id !== question.id) {
+          currentQuestion = question;
+          
+          // Clean up previous votes listener
+          if (unsubscribeVotes) {
+            unsubscribeVotes();
+          }
+          
+          // Destroy existing chart when switching questions
+          if (currentChart) {
+            currentChart.destroy();
+            currentChart = null;
+          }
+          
+          // Listen to votes for this question
+          unsubscribeVotes = listenToVotes(surveyId, question.id, (votes) => {
+            displayResults(question, votes);
+          });
+        }
+      });
+      
+      let currentQuestionHTML = null;
+      
+      function displayResults(question, votes) {
+        const resultsContent = document.getElementById('results-content');
+        
+        // Ensure votes is an object and calculate total votes
+        const voteData = votes || {};
+        const totalVotes = Object.values(voteData).reduce((sum, count) => sum + count, 0);
+        
+        // Kahoot colors for consistency (green first, red second)
+        const kahootColors = ['#26890C', '#E21B3C', '#1368CE', '#FFD602', '#FF8C00', '#9C27B0', '#00BCD4', '#FF5722'];
+        
+        // Check if we need to rebuild the HTML (new question)
+        const questionHTML = question.text + question.votingEnabled;
+        const needsRebuild = currentQuestionHTML !== questionHTML || !document.getElementById('resultsChart');
+        
+        if (needsRebuild) {
+          console.log('Rebuilding HTML for new question or missing chart');
+          currentQuestionHTML = questionHTML;
+          
+          // Create results display
+          resultsContent.innerHTML = `
+            <div class="question-container">
+              <h2 class="question-title">
+                <span class="status-indicator ${question.votingEnabled ? 'active' : 'inactive'}"></span>
+                ${question.text}
+              </h2>
+              
+              <div class="chart-container">
+                <div class="chart-wrapper">
+                  <canvas id="resultsChart"></canvas>
+                </div>
+              </div>
+              
+              <div class="vote-summary" id="vote-summary">
+                Total: ${totalVotes} ${totalVotes === 1 ? 'voto' : 'votos'}
+              </div>
+              
+              <div id="winner-section">
+                ${question.winner ? `
+                  <div class="winner-section">
+                    <h3>🎉 Ganador Seleccionado</h3>
+                    <div class="winner-info">
+                      <p><strong>Opción ganadora:</strong> ${question.options[question.winner.optionIndex]}</p>
+                      <p><strong>Usuario:</strong> ${question.winner.userId}</p>
+                      <p><strong>Seleccionado:</strong> ${new Date(question.winner.selectedAt).toLocaleString()}</p>
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+          
+          // Reset chart since HTML was rebuilt
+          currentChart = null;
+        } else {
+          // Just update the vote summary and winner section
+          const voteSummary = document.getElementById('vote-summary');
+          if (voteSummary) {
+            voteSummary.textContent = `Total: ${totalVotes} ${totalVotes === 1 ? 'voto' : 'votos'}`;
+          }
+          
+          // Update winner section
+          const winnerSection = document.getElementById('winner-section');
+          if (winnerSection) {
+            winnerSection.innerHTML = question.winner ? `
+              <div class="winner-section">
+                <h3>🎉 Ganador Seleccionado</h3>
+                <div class="winner-info">
+                  <p><strong>Opción ganadora:</strong> ${question.options[question.winner.optionIndex]}</p>
+                  <p><strong>Usuario:</strong> ${question.winner.userId}</p>
+                  <p><strong>Seleccionado:</strong> ${new Date(question.winner.selectedAt).toLocaleString()}</p>
+                </div>
+              </div>
+            ` : '';
+          }
+        }
+        
+        // Create or update Chart.js chart
+        createChart(question, voteData, kahootColors, totalVotes);
+      }
+      
+      function createChart(question, votes, colors, totalVotes) {
+        const ctx = document.getElementById('resultsChart');
+        if (!ctx) {
+          console.error('Chart canvas not found');
+          return;
+        }
+        
+        // Prepare data - ensure all options have a value (0 if no votes)
+        const voteData = question.options.map((_, index) => votes[index] || 0);
+        const backgroundColors = question.options.map((_, index) => colors[index % colors.length]);
+        
+        console.log('Chart data:', { question: question.text, voteData, totalVotes });
+        
+        // If chart doesn't exist, create it
+        if (!currentChart) {
+          currentChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: question.options,
+              datasets: [{
+                label: 'Votos',
+                data: voteData,
+                backgroundColor: backgroundColors,
+                borderColor: backgroundColors.map(color => color + 'dd'),
+                borderWidth: 3,
+                borderRadius: 12,
+                barPercentage: 0.6,
+                maxBarThickness: 100
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: {
+                duration: 600,
+                easing: 'easeOutQuart'
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    stepSize: 1,
+                    font: {
+                      size: 14,
+                      weight: '600'
+                    },
+                    color: '#666',
+                    callback: function(value) {
+                      if (Math.floor(value) === value) {
+                        return value;
+                      }
+                    }
+                  },
+                  grid: {
+                    color: 'rgba(0, 0, 0, 0.08)',
+                    drawBorder: false
+                  }
+                },
+                x: {
+                  ticks: {
+                    font: {
+                      size: 14,
+                      weight: '600'
+                    },
+                    color: '#333',
+                    maxRotation: 45,
+                    minRotation: 0,
+                    autoSkip: false
+                  },
+                  grid: {
+                    display: false
+                  }
+                }
+              },
+              plugins: {
+                legend: {
+                  display: false
+                },
+                tooltip: {
+                  backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                  padding: 14,
+                  borderRadius: 10,
+                  titleFont: {
+                    size: 15,
+                    weight: '600'
+                  },
+                  bodyFont: {
+                    size: 14
+                  },
+                  callbacks: {
+                    label: function(context) {
+                      const value = context.parsed.y;
+                      const percentage = totalVotes > 0 ? Math.round((value / totalVotes) * 100) : 0;
+                      return `${value} ${value === 1 ? 'voto' : 'votos'} (${percentage}%)`;
+                    }
+                  }
+                }
+              },
+              onHover: (event, activeElements) => {
+                ctx.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
+              }
+            }
+          });
+        } else {
+          // Update existing chart
+          console.log('Updating existing chart with data:', voteData);
+          currentChart.data.labels = question.options;
+          currentChart.data.datasets[0].data = voteData;
+          currentChart.data.datasets[0].backgroundColor = backgroundColors;
+          currentChart.data.datasets[0].borderColor = backgroundColors.map(color => color + 'dd');
+          currentChart.update('active');
+        }
+      }
+      
+      
+      // Load initial data
+      loadSurveyInfo();
+      
+      // Cleanup on page unload
+      window.addEventListener('beforeunload', () => {
+        unsubscribeQuestion();
+        if (unsubscribeVotes) {
+          unsubscribeVotes();
+        }
+        if (currentChart) {
+          currentChart.destroy();
+        }
+      });
+    </script>
+  </body>
+</html>

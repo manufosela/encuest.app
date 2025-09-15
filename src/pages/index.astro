@@ -1,0 +1,589 @@
+---
+
+---
+
+<!DOCTYPE html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Encuestapp - Participa en la encuesta</title>
+	</head>
+	<body>
+		<div class="container">
+			<div class="hero">
+				<div class="logo-icon">🗳️</div>
+				<h1>Encuestapp</h1>
+				<p>Ingresa a la votación</p>
+			</div>
+			
+			<div class="access-card">
+				<!-- Código de evento -->
+				<div class="code-section">
+					<label for="event-code">Código del evento</label>
+					<div class="code-input-group">
+						<input 
+							type="text" 
+							id="event-code" 
+							placeholder="ABC123" 
+							maxlength="6"
+							autocomplete="off"
+							spellcheck="false"
+						/>
+						<button id="submit-code" class="btn-go">→</button>
+					</div>
+					<p class="error-msg" id="error-msg"></p>
+				</div>
+				
+				<div class="divider">
+					<span>O</span>
+				</div>
+				
+				<!-- Escáner QR -->
+				<button id="scan-qr-btn" class="btn-qr">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<rect x="3" y="3" width="7" height="7"/>
+						<rect x="14" y="3" width="7" height="7"/>
+						<rect x="3" y="14" width="7" height="7"/>
+						<rect x="14" y="14" width="7" height="7"/>
+					</svg>
+					Escanear código QR
+				</button>
+			</div>
+		</div>
+		
+		<!-- Scanner QR Overlay -->
+		<div id="qr-scanner" class="scanner-overlay">
+			<div class="scanner-container">
+				<div class="scanner-header">
+					<h2>Escanea el código QR</h2>
+					<button id="close-scanner" class="btn-close">✕</button>
+				</div>
+				<div class="scanner-viewport">
+					<video id="qr-video"></video>
+					<div class="scan-region"></div>
+				</div>
+				<p class="scanner-hint">Apunta la cámara al código QR</p>
+			</div>
+		</div>
+		
+		<!-- Camera Error Dialog -->
+		<dialog id="camera-error-dialog" class="camera-error-dialog">
+			<div class="dialog-content">
+				<div class="dialog-icon">📷</div>
+				<h2>Error de Cámara</h2>
+				<p id="camera-error-message">No se pudo acceder a la cámara. Verifica los permisos.</p>
+				<button id="camera-dialog-close" class="btn-dialog">Entendido</button>
+			</div>
+		</dialog>
+		
+		<script type="module">
+			import { getAllSurveys } from '/src/lib/firebase/database.js';
+			import QrScanner from 'https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js';
+			
+			const eventCodeInput = document.getElementById('event-code');
+			const submitBtn = document.getElementById('submit-code');
+			const errorMsg = document.getElementById('error-msg');
+			const scanQrBtn = document.getElementById('scan-qr-btn');
+			const qrScanner = document.getElementById('qr-scanner');
+			const qrVideo = document.getElementById('qr-video');
+			const closeScanner = document.getElementById('close-scanner');
+			
+			let scanner = null;
+			
+			// Auto uppercase and format code input
+			eventCodeInput.addEventListener('input', (e) => {
+				e.target.value = e.target.value.toUpperCase();
+				errorMsg.textContent = '';
+			});
+			
+			// Submit on Enter
+			eventCodeInput.addEventListener('keypress', (e) => {
+				if (e.key === 'Enter') {
+					submitCode();
+				}
+			});
+			
+			// Submit button
+			submitBtn.addEventListener('click', submitCode);
+			
+			async function submitCode() {
+				const code = eventCodeInput.value.trim();
+				
+				if (!code) {
+					errorMsg.textContent = 'Ingresa un código';
+					eventCodeInput.focus();
+					return;
+				}
+				
+				if (code.length !== 6) {
+					errorMsg.textContent = 'El código debe tener 6 caracteres';
+					return;
+				}
+				
+				submitBtn.disabled = true;
+				submitBtn.textContent = '...';
+				
+				try {
+					const surveys = await getAllSurveys();
+					const surveyEntry = Object.entries(surveys).find(([id, survey]) => 
+						survey.code && survey.code === code
+					);
+					
+					if (surveyEntry) {
+						window.location.href = `/vote/${surveyEntry[0]}`;
+					} else {
+						errorMsg.textContent = 'Código no válido';
+						submitBtn.disabled = false;
+						submitBtn.innerHTML = '→';
+					}
+				} catch (error) {
+					errorMsg.textContent = 'Error al verificar el código';
+					submitBtn.disabled = false;
+					submitBtn.innerHTML = '→';
+				}
+			}
+			
+			// QR Scanner
+			scanQrBtn.addEventListener('click', async () => {
+				try {
+					qrScanner.style.display = 'flex';
+					
+					// Initialize scanner
+					scanner = new QrScanner(
+						qrVideo,
+						result => {
+							// Check if it's a vote URL
+							if (result.data && result.data.includes('/vote/')) {
+								scanner.stop();
+								window.location.href = result.data;
+							}
+						},
+						{
+							highlightScanRegion: true,
+							highlightCodeOutline: true,
+						}
+					);
+					
+					await scanner.start();
+				} catch (error) {
+					console.error('Scanner error:', error);
+					showCameraErrorDialog('No se pudo acceder a la cámara. Verifica los permisos.');
+					qrScanner.style.display = 'none';
+				}
+			});
+			
+			// Close scanner
+			closeScanner.addEventListener('click', () => {
+				if (scanner) {
+					scanner.stop();
+					scanner = null;
+				}
+				qrScanner.style.display = 'none';
+			});
+			
+			// Close on escape
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && qrScanner.style.display === 'flex') {
+					if (scanner) {
+						scanner.stop();
+						scanner = null;
+					}
+					qrScanner.style.display = 'none';
+				}
+			});
+			
+			// Camera error dialog functions
+			function showCameraErrorDialog(message) {
+				document.getElementById('camera-error-message').textContent = message;
+				document.getElementById('camera-error-dialog').showModal();
+			}
+			
+			// Camera dialog close handler
+			document.getElementById('camera-dialog-close').addEventListener('click', () => {
+				document.getElementById('camera-error-dialog').close();
+			});
+			
+			// Close on backdrop click
+			document.getElementById('camera-error-dialog').addEventListener('click', (e) => {
+				if (e.target.id === 'camera-error-dialog') {
+					document.getElementById('camera-error-dialog').close();
+				}
+			});
+		</script>
+	</body>
+</html>
+
+<style>
+	* {
+		margin: 0;
+		padding: 0;
+		box-sizing: border-box;
+	}
+	
+	body {
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		min-height: 100vh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+	}
+	
+	.container {
+		width: 100%;
+		max-width: 400px;
+	}
+	
+	.hero {
+		text-align: center;
+		color: white;
+		margin-bottom: 2rem;
+	}
+	
+	.logo-icon {
+		font-size: 4rem;
+		margin-bottom: 1rem;
+		filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+	}
+	
+	.hero h1 {
+		font-size: 2.5rem;
+		font-weight: 700;
+		margin-bottom: 0.5rem;
+		text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+	}
+	
+	.hero p {
+		font-size: 1.125rem;
+		opacity: 0.95;
+	}
+	
+	.access-card {
+		background: white;
+		border-radius: 20px;
+		padding: 2rem;
+		box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+	}
+	
+	.code-section {
+		margin-bottom: 1.5rem;
+	}
+	
+	.code-section label {
+		display: block;
+		margin-bottom: 0.75rem;
+		color: #4a5568;
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	
+	.code-input-group {
+		display: flex;
+		gap: 0.5rem;
+	}
+	
+	#event-code {
+		flex: 1;
+		padding: 1rem;
+		font-size: 1.5rem;
+		font-weight: 600;
+		text-align: center;
+		border: 2px solid #e2e8f0;
+		border-radius: 12px;
+		background: #f7fafc;
+		color: #2d3748;
+		letter-spacing: 0.2em;
+		transition: all 0.3s;
+	}
+	
+	#event-code:focus {
+		outline: none;
+		border-color: #667eea;
+		background: white;
+		box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+	}
+	
+	#event-code::placeholder {
+		color: #a0aec0;
+		letter-spacing: 0.2em;
+	}
+	
+	.btn-go {
+		width: 56px;
+		height: 56px;
+		border: none;
+		background: #667eea;
+		color: white;
+		border-radius: 12px;
+		font-size: 1.5rem;
+		cursor: pointer;
+		transition: all 0.3s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	
+	.btn-go:hover:not(:disabled) {
+		background: #5a67d8;
+		transform: translateX(2px);
+	}
+	
+	.btn-go:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	
+	.error-msg {
+		color: #e53e3e;
+		font-size: 0.875rem;
+		margin-top: 0.5rem;
+		min-height: 1.25rem;
+	}
+	
+	.divider {
+		text-align: center;
+		margin: 1.5rem 0;
+		position: relative;
+	}
+	
+	.divider::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 0;
+		right: 0;
+		height: 1px;
+		background: #e2e8f0;
+	}
+	
+	.divider span {
+		background: white;
+		padding: 0 1rem;
+		color: #a0aec0;
+		font-size: 0.875rem;
+		font-weight: 500;
+		position: relative;
+		text-transform: uppercase;
+	}
+	
+	.btn-qr {
+		width: 100%;
+		padding: 1rem;
+		background: white;
+		border: 2px solid #667eea;
+		color: #667eea;
+		border-radius: 12px;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.3s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+	}
+	
+	.btn-qr:hover {
+		background: #667eea;
+		color: white;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+	}
+	
+	.btn-qr svg {
+		width: 24px;
+		height: 24px;
+	}
+	
+	/* Scanner Overlay */
+	.scanner-overlay {
+		display: none;
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.9);
+		z-index: 9999;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+	}
+	
+	.scanner-container {
+		width: 100%;
+		max-width: 500px;
+		background: white;
+		border-radius: 20px;
+		overflow: hidden;
+	}
+	
+	.scanner-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem;
+		background: #667eea;
+		color: white;
+	}
+	
+	.scanner-header h2 {
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+	
+	.btn-close {
+		background: rgba(255, 255, 255, 0.2);
+		border: none;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		color: white;
+		font-size: 1.25rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.3s;
+	}
+	
+	.btn-close:hover {
+		background: rgba(255, 255, 255, 0.3);
+	}
+	
+	.scanner-viewport {
+		position: relative;
+		width: 100%;
+		height: 400px;
+		background: black;
+		overflow: hidden;
+	}
+	
+	#qr-video {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	
+	.scan-region {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 250px;
+		height: 250px;
+		border: 3px solid #667eea;
+		border-radius: 20px;
+		box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.5);
+	}
+	
+	.scanner-hint {
+		padding: 1.5rem;
+		text-align: center;
+		color: #4a5568;
+		background: #f7fafc;
+		font-size: 0.875rem;
+	}
+	
+	/* Camera Error Dialog Styles */
+	.camera-error-dialog {
+		padding: 0;
+		border: none;
+		border-radius: 20px;
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+		backdrop-filter: blur(10px);
+		max-width: 400px;
+		width: 90%;
+	}
+	
+	.camera-error-dialog::backdrop {
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(4px);
+	}
+	
+	.camera-error-dialog .dialog-content {
+		padding: 2rem;
+		text-align: center;
+		background: white;
+		border-radius: 20px;
+	}
+	
+	.camera-error-dialog .dialog-icon {
+		font-size: 4rem;
+		margin-bottom: 1rem;
+		filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+	}
+	
+	.camera-error-dialog h2 {
+		margin: 0 0 1rem 0;
+		color: #e53e3e;
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+	
+	.camera-error-dialog p {
+		margin: 0 0 2rem 0;
+		color: #4a5568;
+		font-size: 1rem;
+		line-height: 1.5;
+	}
+	
+	.camera-error-dialog .btn-dialog {
+		background: #667eea;
+		color: white;
+		border: none;
+		padding: 0.75rem 2rem;
+		border-radius: 12px;
+		font-size: 1rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.3s;
+		min-width: 120px;
+	}
+	
+	.camera-error-dialog .btn-dialog:hover {
+		background: #5a67d8;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+	}
+	
+	.camera-error-dialog .btn-dialog:active {
+		transform: translateY(0);
+	}
+	
+	/* Animation for camera dialog */
+	.camera-error-dialog[open] {
+		animation: cameraDialogSlideIn 0.3s ease-out;
+	}
+	
+	@keyframes cameraDialogSlideIn {
+		from {
+			opacity: 0;
+			transform: scale(0.8) translateY(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+	}
+
+	@media (max-width: 480px) {
+		.hero h1 {
+			font-size: 2rem;
+		}
+		
+		.access-card {
+			padding: 1.5rem;
+		}
+		
+		.scanner-viewport {
+			height: 300px;
+		}
+	}
+</style>

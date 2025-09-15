@@ -1,0 +1,594 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="Admin - Encuestapp">
+  <div class="admin-container">
+    <div class="header">
+      <h2>Gestión de Encuestas</h2>
+      <button id="new-survey-btn" class="btn-primary">Nueva Encuesta</button>
+    </div>
+    
+    <div id="surveys-list" class="surveys-grid">
+      <!-- Surveys will be loaded here -->
+    </div>
+    
+    <!-- Modal for new survey -->
+    <div id="survey-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Nueva Encuesta</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <form id="survey-form">
+          <div class="form-group">
+            <label for="survey-name">Nombre del evento:</label>
+            <input type="text" id="survey-name" required />
+          </div>
+          <div class="form-group">
+            <label for="survey-description">Descripción:</label>
+            <textarea id="survey-description" rows="3"></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary close-btn">Cancelar</button>
+            <button type="submit" class="btn-primary">Crear Encuesta</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <!-- Modal for questions -->
+    <div id="questions-modal" class="modal">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3 id="survey-title">Preguntas</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <div class="questions-container">
+          <button id="add-question-btn" class="btn-primary">Añadir Pregunta</button>
+          <div id="questions-list">
+            <!-- Questions will be loaded here -->
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Modal for new question -->
+    <div id="question-form-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Nueva Pregunta</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <form id="question-form">
+          <div class="form-group">
+            <label for="question-text">Pregunta:</label>
+            <input type="text" id="question-text" required />
+          </div>
+          <div class="form-group">
+            <label>Opciones:</label>
+            <div id="options-container">
+              <input type="text" class="option-input" placeholder="Opción 1" required />
+              <input type="text" class="option-input" placeholder="Opción 2" required />
+            </div>
+            <button type="button" id="add-option-btn" class="btn-secondary">Añadir Opción</button>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary close-btn">Cancelar</button>
+            <button type="submit" class="btn-primary">Guardar Pregunta</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <!-- Error Dialog -->
+    <dialog id="error-dialog" class="error-dialog">
+      <div class="dialog-content">
+        <div class="dialog-icon">⚠️</div>
+        <h2 id="dialog-title">Error</h2>
+        <p id="dialog-message">Ha ocurrido un error</p>
+        <button id="dialog-close" class="btn-dialog">Entendido</button>
+      </div>
+    </dialog>
+  </div>
+</AdminLayout>
+
+<script>
+  import { 
+    createSurvey, 
+    getAllSurveys, 
+    deleteSurvey,
+    addQuestion,
+    deleteQuestion,
+    getSurvey
+  } from '../../lib/firebase/database.js';
+  
+  let currentSurveyId = null;
+  
+  // Error dialog functions
+  function showErrorDialog(title, message) {
+    document.getElementById('dialog-title').textContent = title;
+    document.getElementById('dialog-message').textContent = message;
+    document.getElementById('error-dialog').showModal();
+  }
+  
+  // Dialog close handler
+  document.getElementById('dialog-close').addEventListener('click', () => {
+    document.getElementById('error-dialog').close();
+  });
+  
+  // Close on backdrop click
+  document.getElementById('error-dialog').addEventListener('click', (e) => {
+    if (e.target.id === 'error-dialog') {
+      document.getElementById('error-dialog').close();
+    }
+  });
+  
+  // Load surveys
+  async function loadSurveys() {
+    const surveys = await getAllSurveys();
+    const surveysList = document.getElementById('surveys-list');
+    
+    if (Object.keys(surveys).length === 0) {
+      surveysList.innerHTML = '<p class="no-data">No hay encuestas creadas</p>';
+      return;
+    }
+    
+    surveysList.innerHTML = Object.entries(surveys).map(([id, survey]) => `
+      <div class="survey-card">
+        <h3>${survey.name}</h3>
+        <p>${survey.description || 'Sin descripción'}</p>
+        <div class="survey-code">
+          <span class="code-label">Código:</span>
+          <span class="code-value">${survey.code || 'N/A'}</span>
+        </div>
+        <div class="survey-actions">
+          <button onclick="viewQuestions('${id}')" class="btn-secondary">Preguntas</button>
+          <button onclick="goToControl('${id}')" class="btn-primary">Control</button>
+          <button onclick="deleteSurveyHandler('${id}')" class="btn-danger">Eliminar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  
+  // View questions
+  window.viewQuestions = async (surveyId) => {
+    currentSurveyId = surveyId;
+    const survey = await getSurvey(surveyId);
+    document.getElementById('survey-title').textContent = `Preguntas - ${survey.name}`;
+    
+    const questionsList = document.getElementById('questions-list');
+    if (!survey.questions || Object.keys(survey.questions).length === 0) {
+      questionsList.innerHTML = '<p class="no-data">No hay preguntas creadas</p>';
+    } else {
+      questionsList.innerHTML = Object.entries(survey.questions).map(([id, question]) => `
+        <div class="question-card">
+          <h4>${question.text}</h4>
+          <ul class="options-list">
+            ${question.options.map((opt, i) => `<li>${i + 1}. ${opt}</li>`).join('')}
+          </ul>
+          <button onclick="deleteQuestionHandler('${id}')" class="btn-danger btn-small">Eliminar</button>
+        </div>
+      `).join('');
+    }
+    
+    document.getElementById('questions-modal').classList.add('active');
+  };
+  
+  // Go to control
+  window.goToControl = (surveyId) => {
+    window.location.href = `/admin/control?survey=${surveyId}`;
+  };
+  
+  // Delete survey
+  window.deleteSurveyHandler = async (surveyId) => {
+    if (confirm('¿Estás seguro de eliminar esta encuesta?')) {
+      await deleteSurvey(surveyId);
+      loadSurveys();
+    }
+  };
+  
+  // Delete question
+  window.deleteQuestionHandler = async (questionId) => {
+    if (confirm('¿Estás seguro de eliminar esta pregunta?')) {
+      await deleteQuestion(currentSurveyId, questionId);
+      viewQuestions(currentSurveyId);
+    }
+  };
+  
+  // Modal handlers
+  document.getElementById('new-survey-btn').addEventListener('click', () => {
+    document.getElementById('survey-modal').classList.add('active');
+  });
+  
+  document.getElementById('add-question-btn').addEventListener('click', () => {
+    document.getElementById('question-form-modal').classList.add('active');
+  });
+  
+  document.querySelectorAll('.close-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.target.closest('.modal').classList.remove('active');
+    });
+  });
+  
+  // Add option button
+  document.getElementById('add-option-btn').addEventListener('click', () => {
+    const container = document.getElementById('options-container');
+    const optionCount = container.querySelectorAll('.option-input').length + 1;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'option-input';
+    input.placeholder = `Opción ${optionCount}`;
+    input.required = true;
+    container.appendChild(input);
+  });
+  
+  // Survey form
+  document.getElementById('survey-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('survey-name').value;
+    const description = document.getElementById('survey-description').value;
+    
+    try {
+      await createSurvey({ name, description });
+      document.getElementById('survey-modal').classList.remove('active');
+      e.target.reset();
+      loadSurveys();
+    } catch (error) {
+      console.error('Error creating survey:', error);
+      showErrorDialog('Error al Crear Encuesta', 'Error al crear la encuesta. Verifica que estés autenticado correctamente.');
+    }
+  });
+  
+  // Question form
+  document.getElementById('question-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = document.getElementById('question-text').value;
+    const options = Array.from(document.querySelectorAll('.option-input'))
+      .map(input => input.value)
+      .filter(val => val.trim());
+    
+    if (options.length < 2) {
+      showErrorDialog('Opciones Insuficientes', 'Debe haber al menos 2 opciones para crear la pregunta.');
+      return;
+    }
+    
+    await addQuestion(currentSurveyId, { text, options });
+    document.getElementById('question-form-modal').classList.remove('active');
+    e.target.reset();
+    
+    // Reset options to default 2
+    const container = document.getElementById('options-container');
+    container.innerHTML = `
+      <input type="text" class="option-input" placeholder="Opción 1" required />
+      <input type="text" class="option-input" placeholder="Opción 2" required />
+    `;
+    
+    viewQuestions(currentSurveyId);
+  });
+  
+  // Load surveys on page load
+  loadSurveys();
+</script>
+
+<style>
+  .admin-container {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  
+  .header h2 {
+    margin: 0;
+  }
+  
+  .surveys-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .survey-card {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+  }
+  
+  .survey-card h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+  }
+  
+  .survey-card p {
+    color: #666;
+    margin: 0 0 1rem 0;
+  }
+  
+  .survey-code {
+    background: #e9ecef;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    display: inline-block;
+  }
+  
+  .code-label {
+    font-weight: 500;
+    color: #495057;
+    margin-right: 0.5rem;
+  }
+  
+  .code-value {
+    font-family: monospace;
+    font-size: 1.125rem;
+    font-weight: bold;
+    color: #007bff;
+    letter-spacing: 0.1em;
+  }
+  
+  .survey-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .question-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+  }
+  
+  .question-card h4 {
+    margin: 0 0 0.5rem 0;
+  }
+  
+  .options-list {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+  }
+  
+  .questions-container {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  
+  .no-data {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+  }
+  
+  /* Form styles */
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+  
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  .option-input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+  
+  #add-option-btn {
+    margin-top: 0.5rem;
+  }
+  
+  /* Modal styles */
+  .modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .modal.active {
+    display: flex;
+  }
+  
+  .modal-content {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  .modal-large {
+    max-width: 800px;
+  }
+  
+  .modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .modal-header h3 {
+    margin: 0;
+  }
+  
+  .modal-content form {
+    padding: 1.5rem;
+  }
+  
+  .modal-footer {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #999;
+  }
+  
+  /* Button styles */
+  .btn-primary {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  
+  .btn-primary:hover {
+    background: #0056b3;
+  }
+  
+  .btn-secondary {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  
+  .btn-secondary:hover {
+    background: #545b62;
+  }
+  
+  .btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  
+  .btn-danger:hover {
+    background: #c82333;
+  }
+  
+  .btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Error Dialog Styles */
+  .error-dialog {
+    padding: 0;
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    max-width: 400px;
+    width: 90%;
+  }
+  
+  .error-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+  
+  .error-dialog .dialog-content {
+    padding: 2rem;
+    text-align: center;
+    background: white;
+    border-radius: 20px;
+  }
+  
+  .error-dialog .dialog-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  }
+  
+  .error-dialog h2 {
+    margin: 0 0 1rem 0;
+    color: #e53e3e;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+  
+  .error-dialog p {
+    margin: 0 0 2rem 0;
+    color: #4a5568;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  
+  .error-dialog .btn-dialog {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 120px;
+  }
+  
+  .error-dialog .btn-dialog:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  }
+  
+  .error-dialog .btn-dialog:active {
+    transform: translateY(0);
+  }
+  
+  /* Animation for error dialog */
+  .error-dialog[open] {
+    animation: dialogSlideIn 0.3s ease-out;
+  }
+  
+  @keyframes dialogSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.8) translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+</style>

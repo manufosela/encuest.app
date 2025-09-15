@@ -1,0 +1,9 @@
+{
+  "admins": {
+    "mjfosela@gmail,com": {
+      "role": "superadmin",
+      "name": "Administrador Principal",
+      "addedAt": 1700000000000
+    }
+  }
+}

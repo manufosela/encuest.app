@@ -1,0 +1,326 @@
+---
+export interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content="Sistema de encuestas en tiempo real" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="nav-container">
+        <h1 class="nav-title">Encuestapp Admin</h1>
+        <div class="nav-links">
+          <a href="/admin">Encuestas</a>
+          <a href="/admin/control">Control</a>
+          <button id="logout-btn" class="btn-logout">Cerrar Sesión</button>
+        </div>
+      </div>
+    </nav>
+    <div id="auth-loading" class="auth-loading">
+      <div class="loading-content">
+        <div class="spinner-large"></div>
+        <p>Verificando permisos...</p>
+      </div>
+    </div>
+    
+    <main id="main-content" style="display: none;">
+      <slot />
+    </main>
+    
+    <!-- Error Dialog -->
+    <dialog id="error-dialog" class="error-dialog">
+      <div class="dialog-content">
+        <div class="dialog-icon">🚫</div>
+        <h2 id="dialog-title">Acceso Denegado</h2>
+        <p id="dialog-message">No tienes permisos de administrador.</p>
+        <button id="dialog-close" class="btn-dialog">Entendido</button>
+      </div>
+    </dialog>
+    
+    <script type="module">
+      console.log('AdminLayout script loading...');
+      
+      import { logout } from '/src/lib/firebase/auth.js';
+      import { onAuthChange } from '/src/lib/firebase/auth.js';
+      import { isUserAdmin } from '/src/lib/firebase/admin.js';
+      
+      console.log('Imports loaded successfully');
+      
+      let authCheckCompleted = false;
+      
+      // Check auth state and admin permissions
+      console.log('Setting up onAuthChange listener...');
+      onAuthChange(async (user) => {
+        console.log('Auth state changed:', user ? `User: ${user.email}` : 'No user');
+        
+        if (!user) {
+          console.log('No user, redirecting to login');
+          window.location.href = '/admin/login';
+          return;
+        }
+        
+        // Only check once to avoid multiple redirects
+        if (authCheckCompleted) {
+          console.log('Auth check already completed, skipping');
+          return;
+        }
+        authCheckCompleted = true;
+        
+        try {
+          console.log('Checking admin permissions for:', user.email);
+          // Check if user is authorized admin by checking database
+          const isAdmin = await isUserAdmin(user.email);
+          console.log('Admin check result:', isAdmin);
+          
+          // Hide loading regardless of result
+          document.getElementById('auth-loading').style.display = 'none';
+          
+          if (!isAdmin) {
+            console.log('User is not admin, showing error dialog');
+            showErrorDialog('Acceso Denegado', 'No tienes permisos de administrador.');
+            return;
+          }
+          
+          console.log('User is admin, showing main content');
+          // Show content only if admin verification passes
+          document.getElementById('main-content').style.display = 'block';
+          
+        } catch (error) {
+          console.error('Error in admin check:', error);
+          // Hide loading on error
+          document.getElementById('auth-loading').style.display = 'none';
+          showErrorDialog('Error de Verificación', 'Error al verificar permisos. Intenta de nuevo.');
+        }
+      });
+      
+      // Error dialog functions
+      function showErrorDialog(title, message) {
+        document.getElementById('dialog-title').textContent = title;
+        document.getElementById('dialog-message').textContent = message;
+        document.getElementById('error-dialog').showModal();
+      }
+      
+      // Dialog close handler
+      document.getElementById('dialog-close').addEventListener('click', async () => {
+        document.getElementById('error-dialog').close();
+        await logout();
+        window.location.href = '/admin/login';
+      });
+      
+      // Close on backdrop click
+      document.getElementById('error-dialog').addEventListener('click', (e) => {
+        if (e.target.id === 'error-dialog') {
+          document.getElementById('error-dialog').close();
+        }
+      });
+      
+      // Logout
+      document.getElementById('logout-btn')?.addEventListener('click', async () => {
+        await logout();
+        window.location.href = '/admin/login';
+      });
+    </script>
+  </body>
+</html>
+
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f5;
+  }
+  
+  .navbar {
+    background: #1a1a1a;
+    color: white;
+    padding: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .nav-title {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  
+  .nav-links {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  
+  .nav-links a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background 0.3s;
+  }
+  
+  .nav-links a:hover {
+    background: rgba(255,255,255,0.1);
+  }
+  
+  .btn-logout {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.3s;
+  }
+  
+  .btn-logout:hover {
+    background: #c82333;
+  }
+  
+  main {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  
+  .auth-loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(245, 245, 245, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  
+  .loading-content {
+    text-align: center;
+    background: white;
+    padding: 3rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  
+  .spinner-large {
+    width: 60px;
+    height: 60px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #1a1a1a;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .loading-content p {
+    margin: 0;
+    color: #666;
+    font-size: 1.125rem;
+  }
+  
+  /* Error Dialog Styles */
+  .error-dialog {
+    padding: 0;
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    max-width: 400px;
+    width: 90%;
+  }
+  
+  .error-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+  
+  .dialog-content {
+    padding: 2rem;
+    text-align: center;
+    background: white;
+    border-radius: 16px;
+  }
+  
+  .dialog-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  }
+  
+  .error-dialog h2 {
+    margin: 0 0 1rem 0;
+    color: #dc3545;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+  
+  .error-dialog p {
+    margin: 0 0 2rem 0;
+    color: #6c757d;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  
+  .btn-dialog {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 120px;
+  }
+  
+  .btn-dialog:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+  }
+  
+  .btn-dialog:active {
+    transform: translateY(0);
+  }
+  
+  /* Animation for dialog */
+  .error-dialog[open] {
+    animation: dialogSlideIn 0.3s ease-out;
+  }
+  
+  @keyframes dialogSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.8) translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+</style>

@@ -1,0 +1,99 @@
+{
+  "rules": {
+    "surveys": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins').hasChild(auth.email.replace('.', ',').replace('.', ',').replace('.', ',').replace('.', ','))",
+      "$surveyId": {
+        ".read": true,
+        ".write": "auth != null && root.child('admins').hasChild(auth.email.replace('.', ',').replace('.', ',').replace('.', ',').replace('.', ','))",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "description": {
+          ".validate": "newData.isString()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "activeQuestionId": {
+          ".validate": "newData.isString() || newData.val() == null"
+        },
+        "votingEnabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "questions": {
+          "$questionId": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins').hasChild(auth.email.replace('.', ',').replace('.', ',').replace('.', ',').replace('.', ','))",
+            "text": {
+              ".validate": "newData.isString() && newData.val().length > 0"
+            },
+            "options": {
+              ".validate": "newData.hasChildren()",
+              "$index": {
+                ".validate": "newData.isString()"
+              }
+            },
+            "votes": {
+              ".read": true,
+              "$userId": {
+                ".write": true,
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              }
+            },
+            "winner": {
+              ".read": true,
+              ".write": "auth != null && root.child('admins').hasChild(auth.email.replace('.', ',').replace('.', ',').replace('.', ',').replace('.', ','))",
+              "userId": {
+                ".validate": "newData.isString()"
+              },
+              "optionIndex": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "selectedAt": {
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
+    },
+    "winners": {
+      ".read": true,
+      "$userId": {
+        ".write": "auth != null || $userId == auth.uid",
+        "surveyId": {
+          ".validate": "newData.isString()"
+        },
+        "questionId": {
+          ".validate": "newData.isString()"
+        },
+        "optionIndex": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "selectedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "message": {
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+    "admins": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').hasChild(auth.email.replace('.', ',').replace('.', ',').replace('.', ',').replace('.', ','))",
+      "$email": {
+        ".validate": "newData.hasChildren(['role', 'addedAt'])",
+        "role": {
+          ".validate": "newData.isString() && (newData.val() == 'admin' || newData.val() == 'superadmin')"
+        },
+        "addedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "name": {
+          ".validate": "newData.isString()"
+        }
+      }
+    }
+  }
+}

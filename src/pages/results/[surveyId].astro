@@ -14,19 +14,16 @@ const { surveyId } = Astro.params;
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
-    <div class="container">
+    <div class="fullscreen-container">
       <div class="survey-title">
         <h1 id="survey-name">Cargando...</h1>
       </div>
       
-      <div class="results-card">
-        <div id="results-content" class="results-content">
-          <div class="loading">
-            <div class="spinner"></div>
-            <p>Esperando pregunta activa...</p>
-          </div>
+      <div id="results-content" class="results-content">
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Esperando pregunta activa...</p>
         </div>
-        
       </div>
     </div>
 
@@ -135,20 +132,21 @@ const { surveyId } = Astro.params;
                 ${question.text}
               </h2>
               
-              <div class="chart-container">
-                ${hasLongOptions ? `
-                  <div class="chart-legend">
-                    <div class="legend-items">
-                      ${question.options.map((option, index) => `
-                        <div class="legend-item">
-                          <span class="legend-color" style="background-color: ${kahootColors[index % kahootColors.length]};"></span>
-                          <span class="legend-text">${option}</span>
-                        </div>
-                      `).join('')}
-                    </div>
+              ${hasLongOptions ? `
+                <div class="chart-legend-horizontal">
+                  <div class="legend-items-horizontal">
+                    ${question.options.map((option, index) => `
+                      <div class="legend-item-horizontal">
+                        <span class="legend-color" style="background-color: ${kahootColors[index % kahootColors.length]};"></span>
+                        <span class="legend-text">${option}</span>
+                      </div>
+                    `).join('')}
                   </div>
-                ` : ''}
-                <div class="chart-wrapper">
+                </div>
+              ` : ''}
+              
+              <div class="chart-container-fullscreen">
+                <div class="chart-wrapper-fullscreen">
                   <canvas id="resultsChart"></canvas>
                 </div>
               </div>
@@ -208,6 +206,13 @@ const { surveyId } = Astro.params;
           return;
         }
         
+        // Update chart wrapper height dynamically for fullscreen
+        const wrapper = ctx.closest('.chart-wrapper-fullscreen');
+        if (wrapper) {
+          const rect = wrapper.getBoundingClientRect();
+          ctx.style.height = rect.height + 'px';
+        }
+        
         // Prepare data - ensure all options have a value (0 if no votes)
         const voteData = question.options.map((_, index) => votes[index] || 0);
         const backgroundColors = question.options.map((_, index) => colors[index % colors.length]);
@@ -239,9 +244,18 @@ const { surveyId } = Astro.params;
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              resizeDelay: 0,
               animation: {
                 duration: 600,
                 easing: 'easeOutQuart'
+              },
+              layout: {
+                padding: {
+                  top: 20,
+                  bottom: 20,
+                  left: 10,
+                  right: 10
+                }
               },
               scales: {
                 y: {
@@ -249,7 +263,7 @@ const { surveyId } = Astro.params;
                   ticks: {
                     stepSize: 1,
                     font: {
-                      size: 14,
+                      size: 18,
                       weight: '600'
                     },
                     color: '#666',
@@ -267,7 +281,7 @@ const { surveyId } = Astro.params;
                 x: {
                   ticks: {
                     font: {
-                      size: 14,
+                      size: 16,
                       weight: '600'
                     },
                     color: '#333',
@@ -286,14 +300,14 @@ const { surveyId } = Astro.params;
                 },
                 tooltip: {
                   backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                  padding: 14,
-                  borderRadius: 10,
+                  padding: 16,
+                  borderRadius: 12,
                   titleFont: {
-                    size: 15,
+                    size: 18,
                     weight: '600'
                   },
                   bodyFont: {
-                    size: 14
+                    size: 16
                   },
                   callbacks: {
                     label: function(context) {

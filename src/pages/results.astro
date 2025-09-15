@@ -1,7 +1,5 @@
 ---
-export const prerender = false;
-
-const { surveyId } = Astro.params;
+// Static page - surveyId handled in client from URL
 ---
 
 <!DOCTYPE html>
@@ -31,7 +29,9 @@ const { surveyId } = Astro.params;
         getSurvey
       } from '/src/lib/firebase/database.js';
       
-      const surveyId = window.location.pathname.split('/').pop();
+      // Get surveyId from URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const surveyId = urlParams.get('id');
       
       let currentQuestion = null;
       let unsubscribeVotes = null;

@@ -162,8 +162,8 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   
   // Set up links
   const baseUrl = window.location.origin;
-  document.getElementById('voting-link').href = `${baseUrl}/vote/${surveyId}`;
-  document.getElementById('results-link').href = `${baseUrl}/results/${surveyId}`;
+  document.getElementById('voting-link').href = `${baseUrl}/vote?id=${surveyId}`;
+  document.getElementById('results-link').href = `${baseUrl}/results?id=${surveyId}`;
   
   // Listen to survey changes
   async function setupRealtimeListener() {

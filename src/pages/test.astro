@@ -1,5 +1,5 @@
 ---
-export const prerender = false;
+export const prerender = true;
 ---
 
 <!DOCTYPE html>
@@ -152,7 +152,7 @@ export const prerender = false;
           // Create unique URL with timestamp and user ID to ensure separate localStorage
           const timestamp = Date.now();
           const uniqueParam = `test_user_${i}_${timestamp}`;
-          iframe.src = `/vote/${surveyId}?userId=${uniqueParam}&test=true&frame=${i}`;
+          iframe.src = `/vote?id=${surveyId}&userId=${uniqueParam}&test=true&frame=${i}`;
           
           // Update status when iframe loads
           iframe.onload = () => {

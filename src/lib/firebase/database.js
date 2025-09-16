@@ -1,4 +1,4 @@
-import { ref, set, get, onValue, push, update, remove, off } from 'firebase/database';
+import { ref, set, get, onValue, push, update, remove, off } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js';
 import { database } from '../../../public/lib/firebase-config.js';
 
 // Generate a unique 6-character code

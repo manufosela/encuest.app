@@ -1,4 +1,4 @@
-import { ref, get, set } from 'firebase/database';
+import { ref, get, set } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js';
 import { database, auth } from '../../../public/lib/firebase-config.js';
 
 // Convert email to Firebase key (replace . with ,)

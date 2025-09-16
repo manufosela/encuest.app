@@ -22,6 +22,13 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
         </div>
         <form id="survey-form">
           <div class="form-group">
+            <label for="survey-type">Tipo:</label>
+            <select id="survey-type" required>
+              <option value="survey">📊 Encuesta</option>
+              <option value="contest">🏆 Concurso</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="survey-name">Nombre del evento:</label>
             <input type="text" id="survey-name" required />
           </div>
@@ -75,10 +82,32 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
           <div class="form-group">
             <label>Opciones:</label>
             <div id="options-container">
-              <input type="text" class="option-input" placeholder="Opción 1" required />
-              <input type="text" class="option-input" placeholder="Opción 2" required />
+              <div class="option-row">
+                <input type="text" class="option-input" placeholder="Opción 1" required />
+                <label class="checkbox-label contest-only" style="display:none;">
+                  <input type="checkbox" class="correct-answer" data-index="0" />
+                  <span class="checkmark"></span>
+                  Correcta
+                </label>
+              </div>
+              <div class="option-row">
+                <input type="text" class="option-input" placeholder="Opción 2" required />
+                <label class="checkbox-label contest-only" style="display:none;">
+                  <input type="checkbox" class="correct-answer" data-index="1" />
+                  <span class="checkmark"></span>
+                  Correcta
+                </label>
+              </div>
             </div>
             <button type="button" id="add-option-btn" class="btn-secondary">Añadir Opción</button>
+          </div>
+          <div class="form-group contest-only" style="display:none;">
+            <label for="time-limit">Tiempo límite (segundos):</label>
+            <input type="number" id="time-limit" min="5" max="300" value="30" />
+          </div>
+          <div class="form-group contest-only" style="display:none;">
+            <label for="question-points">Puntos base:</label>
+            <input type="number" id="question-points" min="10" max="1000" value="100" />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn-secondary close-btn">Cancelar</button>
@@ -113,15 +142,15 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   </div>
 </AdminLayout>
 
-<script>
-  import { 
-    createSurvey, 
-    getAllSurveys, 
+<script type="module">
+  import {
+    createSurvey,
+    getAllSurveys,
     deleteSurvey,
     addQuestion,
     deleteQuestion,
     getSurvey
-  } from '../../lib/firebase/database.js';
+  } from '/lib/database.js';
   
   let currentSurveyId = null;
   
@@ -208,29 +237,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     `).join('');
   }
   
-  // View questions
-  window.viewQuestions = async (surveyId) => {
-    currentSurveyId = surveyId;
-    const survey = await getSurvey(surveyId);
-    document.getElementById('survey-title').textContent = `Preguntas - ${survey.name}`;
-    
-    const questionsList = document.getElementById('questions-list');
-    if (!survey.questions || Object.keys(survey.questions).length === 0) {
-      questionsList.innerHTML = '<p class="no-data">No hay preguntas creadas</p>';
-    } else {
-      questionsList.innerHTML = Object.entries(survey.questions).map(([id, question]) => `
-        <div class="question-card">
-          <h4>${question.text}</h4>
-          <ul class="options-list">
-            ${question.options.map((opt, i) => `<li>${i + 1}. ${opt}</li>`).join('')}
-          </ul>
-          <button onclick="deleteQuestionHandler('${id}')" class="btn-danger btn-small">Eliminar</button>
-        </div>
-      `).join('');
-    }
-    
-    document.getElementById('questions-modal').classList.add('active');
-  };
+  // View questions function is defined later with contest support
   
   // Go to control
   window.goToControl = (surveyId) => {
@@ -272,6 +279,52 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   document.getElementById('new-survey-btn').addEventListener('click', () => {
     document.getElementById('survey-modal').classList.add('active');
   });
+
+  // Survey type change handler
+  document.getElementById('survey-type').addEventListener('change', (e) => {
+    const isContest = e.target.value === 'contest';
+    document.getElementById('allow-change-answer').closest('.form-group').style.display = isContest ? 'none' : 'block';
+  });
+
+  // Contest question type handler
+  let isCurrentSurveyContest = false;
+
+  // Store survey type when opening questions modal
+  window.viewQuestions = async function(surveyId) {
+    const survey = await getSurvey(surveyId);
+    isCurrentSurveyContest = survey.type === 'contest';
+
+    // Show/hide contest fields in question modal
+    const contestFields = document.querySelectorAll('.contest-only');
+    contestFields.forEach(field => {
+      field.style.display = isCurrentSurveyContest ? 'block' : 'none';
+    });
+
+    // Continue with original logic
+    currentSurveyId = surveyId;
+    document.getElementById('survey-title').textContent = `Preguntas - ${survey.name}`;
+
+    if (survey.questions) {
+      const questionsHtml = Object.entries(survey.questions).map(([id, question]) => `
+        <div class="question-item">
+          <h4>${question.text}</h4>
+          <ul>
+            ${question.options.map((opt, i) => {
+              const isCorrect = isCurrentSurveyContest && question.correctAnswers?.includes(i);
+              return `<li${isCorrect ? ' class="correct-option"' : ''}>${opt}${isCorrect ? ' ✓' : ''}</li>`;
+            }).join('')}
+          </ul>
+          ${isCurrentSurveyContest && question.timeLimit ? `<p><strong>Tiempo: ${question.timeLimit}s | Puntos: ${question.points}</strong></p>` : ''}
+          <button onclick="deleteQuestionConfirm('${id}')" class="btn-danger">Eliminar</button>
+        </div>
+      `).join('');
+      document.getElementById('questions-list').innerHTML = questionsHtml;
+    } else {
+      document.getElementById('questions-list').innerHTML = '<p>No hay preguntas aún.</p>';
+    }
+
+    document.getElementById('questions-modal').classList.add('active');
+  };
   
   document.getElementById('add-question-btn').addEventListener('click', () => {
     document.getElementById('question-form-modal').classList.add('active');
@@ -286,24 +339,48 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   // Add option button
   document.getElementById('add-option-btn').addEventListener('click', () => {
     const container = document.getElementById('options-container');
-    const optionCount = container.querySelectorAll('.option-input').length + 1;
+    const optionCount = container.querySelectorAll('.option-input').length;
+
+    const optionRow = document.createElement('div');
+    optionRow.className = 'option-row';
+
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'option-input';
-    input.placeholder = `Opción ${optionCount}`;
+    input.placeholder = `Opción ${optionCount + 1}`;
     input.required = true;
-    container.appendChild(input);
+
+    const correctLabel = document.createElement('label');
+    correctLabel.className = 'checkbox-label contest-only';
+    correctLabel.style.display = isCurrentSurveyContest ? 'block' : 'none';
+
+    const correctCheckbox = document.createElement('input');
+    correctCheckbox.type = 'checkbox';
+    correctCheckbox.className = 'correct-answer';
+    correctCheckbox.setAttribute('data-index', optionCount);
+
+    const checkmark = document.createElement('span');
+    checkmark.className = 'checkmark';
+
+    correctLabel.appendChild(correctCheckbox);
+    correctLabel.appendChild(checkmark);
+    correctLabel.appendChild(document.createTextNode(' Correcta'));
+
+    optionRow.appendChild(input);
+    optionRow.appendChild(correctLabel);
+    container.appendChild(optionRow);
   });
   
   // Survey form
   document.getElementById('survey-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const type = document.getElementById('survey-type').value;
     const name = document.getElementById('survey-name').value;
     const description = document.getElementById('survey-description').value;
     const allowChangeAnswer = document.getElementById('allow-change-answer').checked;
-    
+
     try {
-      await createSurvey({ name, description, allowChangeAnswer });
+      await createSurvey({ type, name, description, allowChangeAnswer });
       document.getElementById('survey-modal').classList.remove('active');
       e.target.reset();
       loadSurveys();
@@ -320,24 +397,65 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     const options = Array.from(document.querySelectorAll('.option-input'))
       .map(input => input.value)
       .filter(val => val.trim());
-    
+
     if (options.length < 2) {
       showErrorDialog('Opciones Insuficientes', 'Debe haber al menos 2 opciones para crear la pregunta.');
       return;
     }
-    
-    await addQuestion(currentSurveyId, { text, options });
-    document.getElementById('question-form-modal').classList.remove('active');
-    e.target.reset();
-    
-    // Reset options to default 2
-    const container = document.getElementById('options-container');
-    container.innerHTML = `
-      <input type="text" class="option-input" placeholder="Opción 1" required />
-      <input type="text" class="option-input" placeholder="Opción 2" required />
-    `;
-    
-    viewQuestions(currentSurveyId);
+
+    let questionData = { text, options };
+
+    try {
+      // Add contest-specific fields if applicable
+      if (isCurrentSurveyContest) {
+        const correctAnswers = Array.from(document.querySelectorAll('.correct-answer:checked'))
+          .map(checkbox => parseInt(checkbox.getAttribute('data-index')));
+
+        if (correctAnswers.length === 0) {
+          showErrorDialog('Respuesta Correcta Requerida', 'Debes marcar al menos una respuesta correcta para concursos.');
+          return;
+        }
+
+        questionData.correctAnswers = correctAnswers;
+        questionData.timeLimit = parseInt(document.getElementById('time-limit').value) || 30;
+        questionData.points = parseInt(document.getElementById('question-points').value) || 100;
+
+        // Use contest question function (temporarily using regular addQuestion)
+        await addQuestion(currentSurveyId, questionData);
+      } else {
+        // Use regular question function
+        await addQuestion(currentSurveyId, questionData);
+      }
+
+      document.getElementById('question-form-modal').classList.remove('active');
+      e.target.reset();
+
+      // Reset options to default 2
+      const container = document.getElementById('options-container');
+      container.innerHTML = `
+        <div class="option-row">
+          <input type="text" class="option-input" placeholder="Opción 1" required />
+          <label class="checkbox-label contest-only" style="display:${isCurrentSurveyContest ? 'block' : 'none'};">
+            <input type="checkbox" class="correct-answer" data-index="0" />
+            <span class="checkmark"></span>
+            Correcta
+          </label>
+        </div>
+        <div class="option-row">
+          <input type="text" class="option-input" placeholder="Opción 2" required />
+          <label class="checkbox-label contest-only" style="display:${isCurrentSurveyContest ? 'block' : 'none'};">
+            <input type="checkbox" class="correct-answer" data-index="1" />
+            <span class="checkmark"></span>
+            Correcta
+          </label>
+        </div>
+      `;
+
+      viewQuestions(currentSurveyId);
+    } catch (error) {
+      console.error('Error creating question:', error);
+      showErrorDialog('Error', 'Error al crear la pregunta: ' + error.message);
+    }
   });
   
   // Load surveys on page load
@@ -842,5 +960,30 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
       opacity: 1;
       transform: scale(1) translateY(0);
     }
+  }
+
+  /* Contest-specific styles */
+  .option-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .option-row .option-input {
+    flex: 1;
+    margin-bottom: 0;
+  }
+
+  .correct-option {
+    background-color: #e8f5e8;
+    color: #2d5a2d;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .contest-only {
+    transition: all 0.3s ease;
   }
 </style>

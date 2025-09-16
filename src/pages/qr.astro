@@ -24,12 +24,12 @@
           
           <div class="qr-info">
             <div class="info-section">
-              <label>URL de votación</label>
+              <label>Ir a</label>
               <div class="url-display">
-                <span id="vote-url">https://encuest.app/vote?id=...</span>
+                <span>https://encuest.app</span>
               </div>
             </div>
-            
+
             <div class="info-section">
               <label>Código</label>
               <div class="code-display">
@@ -69,10 +69,9 @@
           document.getElementById('survey-name').textContent = survey.name;
           document.getElementById('survey-code').textContent = survey.code || 'N/A';
           
-          // Generate URLs
+          // Generate vote URL for QR code
           const baseUrl = window.location.origin;
           const voteUrl = `${baseUrl}/vote?id=${surveyId}`;
-          document.getElementById('vote-url').textContent = voteUrl;
           
           // Generate QR Code
           const qrDataUrl = await generateQRCode(voteUrl);
@@ -205,9 +204,10 @@
   
   .url-display span {
     font-family: 'Courier New', monospace;
-    font-size: 1rem;
+    font-size: 1.5rem;
     color: #495057;
     word-break: break-all;
+    font-weight: 600;
   }
   
   .code-display {

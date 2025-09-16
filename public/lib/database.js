@@ -29,9 +29,17 @@ export const createSurvey = async (surveyData) => {
   await set(newSurveyRef, {
     ...surveyData,
     code: code,
+    type: surveyData.type || 'survey', // 'survey' or 'contest'
     createdAt: Date.now(),
     activeQuestionId: null,
-    votingEnabled: false
+    votingEnabled: false,
+    // Contest specific fields
+    ...(surveyData.type === 'contest' && {
+      currentQuestionIndex: 0,
+      contestStarted: false,
+      contestFinished: false,
+      questionStartTime: null
+    })
   });
   return newSurveyRef.key;
 };
@@ -272,4 +280,173 @@ export const resetQuestionVotes = async (surveyId, questionId) => {
     console.error('Error in resetQuestionVotes:', error);
     throw error;
   }
+};
+
+// ===== CONTEST OPERATIONS =====
+
+// Contest question operations
+export const addContestQuestion = async (surveyId, questionData) => {
+  const questionsRef = ref(database, `surveys/${surveyId}/questions`);
+  const newQuestionRef = push(questionsRef);
+  await set(newQuestionRef, {
+    ...questionData,
+    correctAnswers: questionData.correctAnswers || [], // Array of correct option indices
+    timeLimit: questionData.timeLimit || 30, // Seconds
+    points: questionData.points || 100, // Base points for correct answer
+    responses: {} // User responses with timestamps
+  });
+  return newQuestionRef.key;
+};
+
+// Contest control operations
+export const startContest = async (surveyId) => {
+  await updateSurvey(surveyId, {
+    contestStarted: true,
+    contestFinished: false,
+    currentQuestionIndex: 0,
+    questionStartTime: Date.now()
+  });
+};
+
+export const nextContestQuestion = async (surveyId) => {
+  const survey = await getSurvey(surveyId);
+  const questionKeys = Object.keys(survey.questions || {});
+  const nextIndex = (survey.currentQuestionIndex || 0) + 1;
+
+  if (nextIndex >= questionKeys.length) {
+    // Contest finished
+    await finishContest(surveyId);
+  } else {
+    await updateSurvey(surveyId, {
+      currentQuestionIndex: nextIndex,
+      questionStartTime: Date.now(),
+      activeQuestionId: questionKeys[nextIndex]
+    });
+  }
+};
+
+export const finishContest = async (surveyId) => {
+  await updateSurvey(surveyId, {
+    contestFinished: true,
+    activeQuestionId: null,
+    votingEnabled: false,
+    questionStartTime: null
+  });
+
+  // Calculate final rankings
+  const rankings = await calculateFinalRankings(surveyId);
+
+  // Set rankings in database
+  const rankingsRef = ref(database, `contests/${surveyId}/finalRankings`);
+  await set(rankingsRef, rankings);
+
+  // Send notifications to top 3
+  await sendContestNotifications(surveyId, rankings);
+
+  return rankings;
+};
+
+// Contest response operations
+export const submitContestResponse = async (surveyId, questionId, optionIndex, userId) => {
+  const responseTime = Date.now();
+  const responseRef = ref(database, `surveys/${surveyId}/questions/${questionId}/responses/${userId}`);
+
+  await set(responseRef, {
+    optionIndex,
+    responseTime,
+    submitted: true
+  });
+
+  // Calculate points for this response
+  const points = await calculateResponsePoints(surveyId, questionId, userId, responseTime);
+
+  // Update user's total score
+  const userScoreRef = ref(database, `contests/${surveyId}/scores/${userId}`);
+  const currentScore = await get(userScoreRef);
+  const newScore = (currentScore.val() || 0) + points;
+  await set(userScoreRef, newScore);
+
+  return { points, totalScore: newScore };
+};
+
+// Calculate points based on correctness and speed
+export const calculateResponsePoints = async (surveyId, questionId, userId, responseTime) => {
+  const survey = await getSurvey(surveyId);
+  const question = survey.questions[questionId];
+  const userResponse = question.responses[userId];
+
+  if (!userResponse) return 0;
+
+  // Check if answer is correct
+  const isCorrect = question.correctAnswers.includes(userResponse.optionIndex);
+  if (!isCorrect) return 0;
+
+  // Calculate speed bonus
+  const timeTaken = responseTime - survey.questionStartTime;
+  const timeLimit = question.timeLimit * 1000; // Convert to milliseconds
+  const speedMultiplier = Math.max(0.1, (timeLimit - timeTaken) / timeLimit);
+
+  return Math.round(question.points * speedMultiplier);
+};
+
+// Get real-time contest rankings
+export const listenToContestRankings = (surveyId, callback) => {
+  const scoresRef = ref(database, `contests/${surveyId}/scores`);
+  const unsubscribe = onValue(scoresRef, (snapshot) => {
+    const scores = snapshot.val() || {};
+
+    // Convert to rankings array
+    const rankings = Object.entries(scores)
+      .map(([userId, score]) => ({ userId, score }))
+      .sort((a, b) => b.score - a.score);
+
+    callback(rankings);
+  });
+  return unsubscribe;
+};
+
+// Calculate final rankings
+export const calculateFinalRankings = async (surveyId) => {
+  const scoresRef = ref(database, `contests/${surveyId}/scores`);
+  const snapshot = await get(scoresRef);
+  const scores = snapshot.val() || {};
+
+  return Object.entries(scores)
+    .map(([userId, score]) => ({ userId, score }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry, index) => ({ ...entry, position: index + 1 }));
+};
+
+// Send notifications to contest winners
+export const sendContestNotifications = async (surveyId, rankings) => {
+  const topThree = rankings.slice(0, 3);
+
+  for (let i = 0; i < topThree.length; i++) {
+    const { userId, score, position } = topThree[i];
+    const messages = ['🥇 ¡Primer lugar!', '🥈 ¡Segundo lugar!', '🥉 ¡Tercer lugar!'];
+
+    const notificationRef = ref(database, `contestWinners/${userId}`);
+    await set(notificationRef, {
+      surveyId,
+      position,
+      score,
+      message: messages[i],
+      timestamp: Date.now()
+    });
+  }
+};
+
+// Listen to contest winner notifications
+export const listenToContestWinnerNotification = (userId, callback) => {
+  const notificationRef = ref(database, `contestWinners/${userId}`);
+  const unsubscribe = onValue(notificationRef, (snapshot) => {
+    callback(snapshot.val());
+  });
+  return unsubscribe;
+};
+
+// Clear contest winner notification
+export const clearContestWinnerNotification = async (userId) => {
+  const notificationRef = ref(database, `contestWinners/${userId}`);
+  await remove(notificationRef);
 };

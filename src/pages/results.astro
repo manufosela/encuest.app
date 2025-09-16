@@ -77,6 +77,7 @@
         
         // New question - setup votes listener
         if (!currentQuestion || currentQuestion.id !== question.id) {
+          console.log('New question received:', question);
           currentQuestion = question;
           
           // Clean up previous votes listener
@@ -126,14 +127,14 @@
         const winnerHTML = question.winner ? JSON.stringify(question.winner) : 'no-winner';
         const needsRebuild = currentQuestionHTML !== questionHTML || !document.getElementById('resultsChart');
         
-        // Check if options are too long (more than 15 characters average or any option > 25 chars)
-        const hasLongOptions = question.options.some(opt => opt.length > 25) || 
-                              (question.options.reduce((sum, opt) => sum + opt.length, 0) / question.options.length) > 15;
+        // Always show legend
+        const hasLongOptions = true;
         
         if (needsRebuild) {
           console.log('Rebuilding HTML for new question or missing chart');
+          console.log('Question options:', question.options);
           currentQuestionHTML = questionHTML;
-          
+
           // Create results display
           resultsContent.innerHTML = `
             <div class="question-container">
@@ -141,19 +142,17 @@
                 <span class="status-indicator ${question.votingEnabled ? 'active' : 'inactive'}"></span>
                 ${question.text}
               </h2>
-              
-              ${hasLongOptions ? `
-                <div class="chart-legend-horizontal">
-                  <div class="legend-items-horizontal">
-                    ${question.options.map((option, index) => `
-                      <div class="legend-item-horizontal">
-                        <span class="legend-color" style="background-color: ${kahootColors[index % kahootColors.length]};"></span>
-                        <span class="legend-text">${option}</span>
-                      </div>
-                    `).join('')}
-                  </div>
+
+              <div class="chart-legend-horizontal">
+                <div class="legend-items-horizontal">
+                  ${question.options && question.options.length > 0 ? question.options.map((option, index) => `
+                    <div class="legend-item-horizontal">
+                      <span class="legend-color" style="background-color: ${kahootColors[index % kahootColors.length]};"></span>
+                      <span class="legend-text">${option}</span>
+                    </div>
+                  `).join('') : ''}
                 </div>
-              ` : ''}
+              </div>
               
               <div class="chart-container-fullscreen">
                 <div class="chart-wrapper-fullscreen">
@@ -203,7 +202,7 @@
         createChart(question, voteData, kahootColors, totalVotes, hasLongOptions);
       }
       
-      function createChart(question, votes, colors, totalVotes, hasLongOptions = false) {
+      function createChart(question, votes, colors, totalVotes, hasLongOptions = true) {
         const ctx = document.getElementById('resultsChart');
         if (!ctx) {
           console.error('Chart canvas not found');

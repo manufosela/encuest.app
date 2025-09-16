@@ -1,0 +1,546 @@
+---
+// Static page - contestId handled in client from URL
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Concurso - Encuestapp</title>
+    <link rel="stylesheet" href="/css/survey.css">
+  </head>
+  <body>
+    <div class="fullscreen-container">
+      <div class="contest-header">
+        <h1 id="contest-name">Cargando...</h1>
+        <div class="contest-info">
+          <div id="question-counter" class="question-counter">Pregunta 1 de 5</div>
+          <div id="timer" class="timer">30s</div>
+          <div id="score" class="score">Puntos: 0</div>
+        </div>
+      </div>
+
+      <div id="contest-content" class="contest-content">
+        <div id="waiting-screen" class="waiting-screen">
+          <div class="waiting-card">
+            <h2>🏆 ¡Bienvenido al Concurso!</h2>
+            <p>Espera a que el presentador inicie el concurso...</p>
+            <div class="loading-spinner"></div>
+          </div>
+        </div>
+
+        <div id="question-screen" class="question-screen" style="display: none;">
+          <div class="question-container">
+            <h2 id="question-text" class="question-title">Pregunta aquí...</h2>
+
+            <div id="options-container" class="options-container">
+              <!-- Options will be populated here -->
+            </div>
+
+            <div id="timer-bar" class="timer-bar">
+              <div id="timer-progress" class="timer-progress"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="feedback-screen" class="feedback-screen" style="display: none;">
+          <div class="feedback-container">
+            <div id="feedback-icon" class="feedback-icon">✅</div>
+            <h2 id="feedback-title">¡Correcto!</h2>
+            <div id="feedback-details">
+              <p id="points-earned">+85 puntos</p>
+              <p id="total-score">Total: 185 puntos</p>
+            </div>
+            <div class="waiting-next">
+              <p>Esperando siguiente pregunta...</p>
+              <div class="loading-spinner"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="results-screen" class="results-screen" style="display: none;">
+          <div class="final-results">
+            <h2>🏁 ¡Concurso Finalizado!</h2>
+            <div id="final-score" class="final-score">
+              <div class="score-circle">
+                <span id="final-points">0</span>
+                <small>puntos</small>
+              </div>
+            </div>
+            <div id="final-position" class="final-position">
+              <h3>Tu posición: <span id="position-number">#1</span></h3>
+            </div>
+            <div id="winner-notification" class="winner-notification" style="display: none;">
+              <div class="winner-badge">
+                <span class="winner-icon">🏆</span>
+                <span class="winner-text">¡Ganaste!</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import {
+        getSurvey,
+        submitContestResponse,
+        listenToSurvey,
+        listenToContestRankings,
+        listenToContestWinnerNotification
+      } from '/lib/database.js';
+
+      // Get contestId from URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const contestId = urlParams.get('id');
+
+      if (!contestId) {
+        alert('No se especificó el concurso');
+        window.location.href = '/';
+      }
+
+      // Generate or get user ID
+      let userId = localStorage.getItem('contestUserId');
+      if (!userId) {
+        userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('contestUserId', userId);
+      }
+
+      let currentContest = null;
+      let currentQuestion = null;
+      let currentQuestionId = null;
+      let userScore = 0;
+      let timer = null;
+      let timeLeft = 0;
+      let answered = false;
+
+      // Initialize contest
+      async function initContest() {
+        try {
+          currentContest = await getSurvey(contestId);
+          if (!currentContest || currentContest.type !== 'contest') {
+            alert('Concurso no encontrado o inválido');
+            window.location.href = '/';
+            return;
+          }
+
+          document.getElementById('contest-name').textContent = currentContest.name;
+
+          // Listen to contest changes
+          const unsubscribe = listenToSurvey(contestId, handleContestUpdate);
+
+          // Listen to rankings
+          const unsubscribeRankings = listenToContestRankings(contestId, handleRankingsUpdate);
+
+          // Listen to winner notifications
+          const unsubscribeWinners = listenToContestWinnerNotification(userId, handleWinnerNotification);
+
+          // Cleanup on page unload
+          window.addEventListener('beforeunload', () => {
+            unsubscribe();
+            unsubscribeRankings();
+            unsubscribeWinners();
+            if (timer) clearInterval(timer);
+          });
+
+        } catch (error) {
+          console.error('Error initializing contest:', error);
+          alert('Error al cargar el concurso');
+        }
+      }
+
+      function handleContestUpdate(contest) {
+        currentContest = contest;
+
+        if (!contest.contestStarted) {
+          showWaitingScreen();
+        } else if (contest.contestFinished) {
+          showResultsScreen();
+        } else if (contest.activeQuestionId) {
+          const questionId = contest.activeQuestionId;
+          const question = contest.questions[questionId];
+
+          if (questionId !== currentQuestionId) {
+            // New question
+            currentQuestionId = questionId;
+            currentQuestion = question;
+            answered = false;
+            showQuestion();
+          }
+        }
+      }
+
+      function handleRankingsUpdate(rankings) {
+        // Update user's current score and position
+        const userRanking = rankings.find(r => r.userId === userId);
+        if (userRanking) {
+          userScore = userRanking.score;
+          document.getElementById('score').textContent = `Puntos: ${userScore}`;
+
+          if (currentContest?.contestFinished) {
+            const position = rankings.findIndex(r => r.userId === userId) + 1;
+            document.getElementById('final-points').textContent = userScore;
+            document.getElementById('position-number').textContent = `#${position}`;
+          }
+        }
+      }
+
+      function handleWinnerNotification(notification) {
+        if (notification && currentContest?.contestFinished) {
+          document.getElementById('winner-notification').style.display = 'block';
+          document.querySelector('.winner-text').textContent = notification.message;
+        }
+      }
+
+      function showWaitingScreen() {
+        hideAllScreens();
+        document.getElementById('waiting-screen').style.display = 'flex';
+      }
+
+      function showQuestion() {
+        hideAllScreens();
+        document.getElementById('question-screen').style.display = 'block';
+
+        // Update question counter
+        const questionKeys = Object.keys(currentContest.questions);
+        const currentIndex = questionKeys.indexOf(currentQuestionId) + 1;
+        document.getElementById('question-counter').textContent = `Pregunta ${currentIndex} de ${questionKeys.length}`;
+
+        // Display question
+        document.getElementById('question-text').textContent = currentQuestion.text;
+
+        // Display options
+        const optionsContainer = document.getElementById('options-container');
+        optionsContainer.innerHTML = currentQuestion.options.map((option, index) => `
+          <button class="option-btn" data-index="${index}">
+            ${option}
+          </button>
+        `).join('');
+
+        // Add option click handlers
+        document.querySelectorAll('.option-btn').forEach(btn => {
+          btn.addEventListener('click', () => selectOption(parseInt(btn.dataset.index)));
+        });
+
+        // Start timer
+        startTimer();
+      }
+
+      function startTimer() {
+        timeLeft = currentQuestion.timeLimit;
+        document.getElementById('timer').textContent = `${timeLeft}s`;
+
+        const progressBar = document.getElementById('timer-progress');
+        const totalTime = currentQuestion.timeLimit;
+
+        timer = setInterval(() => {
+          timeLeft--;
+          document.getElementById('timer').textContent = `${timeLeft}s`;
+
+          // Update progress bar
+          const progress = (timeLeft / totalTime) * 100;
+          progressBar.style.width = `${progress}%`;
+
+          // Change color as time runs out
+          if (timeLeft <= 5) {
+            progressBar.style.backgroundColor = '#ff4757';
+          } else if (timeLeft <= 10) {
+            progressBar.style.backgroundColor = '#ffa502';
+          }
+
+          if (timeLeft <= 0) {
+            clearInterval(timer);
+            if (!answered) {
+              // Time's up, show feedback for no answer
+              showFeedback(false, 0);
+            }
+          }
+        }, 1000);
+      }
+
+      async function selectOption(optionIndex) {
+        if (answered) return;
+
+        answered = true;
+        clearInterval(timer);
+
+        // Disable all options
+        document.querySelectorAll('.option-btn').forEach(btn => {
+          btn.disabled = true;
+        });
+
+        try {
+          // Submit response
+          const result = await submitContestResponse(contestId, currentQuestionId, optionIndex, userId);
+
+          // Check if answer is correct
+          const isCorrect = currentQuestion.correctAnswers.includes(optionIndex);
+
+          // Show feedback
+          showFeedback(isCorrect, result.points);
+
+        } catch (error) {
+          console.error('Error submitting response:', error);
+          alert('Error al enviar respuesta');
+        }
+      }
+
+      function showFeedback(isCorrect, points) {
+        hideAllScreens();
+        document.getElementById('feedback-screen').style.display = 'flex';
+
+        const feedbackIcon = document.getElementById('feedback-icon');
+        const feedbackTitle = document.getElementById('feedback-title');
+
+        if (isCorrect) {
+          feedbackIcon.textContent = '✅';
+          feedbackTitle.textContent = '¡Correcto!';
+          feedbackIcon.className = 'feedback-icon correct';
+        } else {
+          feedbackIcon.textContent = '❌';
+          feedbackTitle.textContent = 'Incorrecto';
+          feedbackIcon.className = 'feedback-icon incorrect';
+        }
+
+        document.getElementById('points-earned').textContent = `+${points} puntos`;
+        document.getElementById('total-score').textContent = `Total: ${userScore + points} puntos`;
+      }
+
+      function showResultsScreen() {
+        hideAllScreens();
+        document.getElementById('results-screen').style.display = 'flex';
+      }
+
+      function hideAllScreens() {
+        document.getElementById('waiting-screen').style.display = 'none';
+        document.getElementById('question-screen').style.display = 'none';
+        document.getElementById('feedback-screen').style.display = 'none';
+        document.getElementById('results-screen').style.display = 'none';
+      }
+
+      // Initialize
+      initContest();
+    </script>
+  </body>
+</html>
+
+<style>
+  .contest-header {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .contest-info {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+  }
+
+  .question-counter, .timer, .score {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+
+  .timer {
+    background: rgba(255, 255, 255, 0.3);
+    min-width: 60px;
+    text-align: center;
+  }
+
+  .contest-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .waiting-screen, .feedback-screen, .results-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .waiting-card, .feedback-container, .final-results {
+    text-align: center;
+    background: white;
+    padding: 3rem;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    max-width: 500px;
+  }
+
+  .question-screen {
+    width: 100%;
+    max-width: 800px;
+  }
+
+  .question-container {
+    background: white;
+    border-radius: 20px;
+    padding: 2rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  }
+
+  .question-title {
+    font-size: 1.5rem;
+    margin-bottom: 2rem;
+    color: #333;
+    text-align: center;
+  }
+
+  .options-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .option-btn {
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .option-btn:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    transform: translateY(-2px);
+  }
+
+  .option-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .timer-bar {
+    background: #e9ecef;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .timer-progress {
+    background: #28a745;
+    height: 100%;
+    transition: width 1s linear, background-color 0.3s ease;
+    width: 100%;
+  }
+
+  .feedback-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+  }
+
+  .feedback-icon.correct {
+    color: #28a745;
+  }
+
+  .feedback-icon.incorrect {
+    color: #dc3545;
+  }
+
+  .feedback-details {
+    margin: 2rem 0;
+  }
+
+  .feedback-details p {
+    margin: 0.5rem 0;
+    font-size: 1.2rem;
+  }
+
+  .final-score {
+    margin: 2rem 0;
+  }
+
+  .score-circle {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
+  .score-circle small {
+    font-size: 0.8rem;
+    font-weight: 400;
+  }
+
+  .winner-notification {
+    margin-top: 2rem;
+  }
+
+  .winner-badge {
+    background: linear-gradient(135deg, #ffd700, #ffed4e);
+    color: #333;
+    padding: 1rem 2rem;
+    border-radius: 50px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 5px 15px rgba(255, 215, 0, 0.3);
+  }
+
+  .loading-spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 1rem auto;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .contest-header {
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    .contest-info {
+      gap: 1rem;
+    }
+
+    .options-container {
+      grid-template-columns: 1fr;
+    }
+
+    .question-container {
+      padding: 1.5rem;
+    }
+  }
+</style>

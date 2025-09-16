@@ -386,17 +386,32 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     // Clear winner button handler
     document.getElementById('clear-winner-btn').addEventListener('click', async () => {
       const questionId = document.getElementById('raffle-question').value;
-      
+
       if (!questionId) return;
-      
+
       try {
+        console.log('Clearing winner for question:', questionId);
         await clearWinner(surveyId, questionId);
+        console.log('Winner cleared successfully');
         document.getElementById('raffle-result').innerHTML = '';
         document.getElementById('clear-winner-btn').style.display = 'none';
+
+        // Force update the question display to reflect winner removal
+        const questionSelect = document.getElementById('raffle-question');
+        questionSelect.dispatchEvent(new Event('change'));
       } catch (error) {
         console.error('Error clearing winner:', error);
       }
     });
+
+    // Auto-select question with winner on page load
+    const questionWithWinner = Object.entries(survey.questions).find(([id, question]) => question.winner);
+    if (questionWithWinner) {
+      const [questionId] = questionWithWinner;
+      console.log('Found question with winner, auto-selecting:', questionId);
+      document.getElementById('raffle-question').value = questionId;
+      document.getElementById('raffle-question').dispatchEvent(new Event('change'));
+    }
   }
   
   // Activate question

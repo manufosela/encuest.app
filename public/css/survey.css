@@ -540,14 +540,16 @@ body {
 .legend-item-horizontal {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 0.8rem;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
   background: white;
   border-radius: 20px;
   border: 1px solid #e9ecef;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   min-height: 3rem;
+  min-width: 80px;
 }
 
 .legend-item-horizontal:hover {
@@ -556,9 +558,9 @@ body {
 }
 
 .legend-item-horizontal .legend-color {
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
   flex-shrink: 0;
   border: 2px solid white;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
@@ -567,10 +569,12 @@ body {
 .legend-item-horizontal .legend-text {
   color: #495057;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1.2;
   word-wrap: break-word;
   hyphens: auto;
+  min-width: 30px;
+  text-align: center;
 }
 
 /* Winner Section */

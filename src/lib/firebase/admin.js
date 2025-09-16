@@ -1,5 +1,5 @@
 import { ref, get, set } from 'firebase/database';
-import { database, auth } from './config.js';
+import { database, auth } from '../../../public/lib/firebase-config.js';
 
 // Convert email to Firebase key (replace . with ,)
 const emailToKey = (email) => email.replace(/\./g, ',');

@@ -1,5 +1,5 @@
 import { ref, set, get, onValue, push, update, remove, off } from 'firebase/database';
-import { database } from './config.js';
+import { database } from '../../../public/lib/firebase-config.js';
 
 // Generate a unique 6-character code
 const generateCode = () => {

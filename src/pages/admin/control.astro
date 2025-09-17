@@ -88,14 +88,17 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 </AdminLayout>
 
 <script type="module">
-  import { 
+  import {
     getSurvey,
     setActiveQuestion,
     toggleVoting,
     listenToSurvey,
     selectRandomWinner,
+    selectRandomParticipant,
     clearWinner,
+    clearRaffleWinners,
     getVotersByOption,
+    getAllParticipants,
     resetQuestionVotes,
     deactivateQuestion,
     updateSurvey
@@ -261,157 +264,247 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
   }
   
   // Update raffle section
+  let raffleInitialized = false;
   function updateRaffleSection(survey) {
     const raffleControls = document.getElementById('raffle-controls');
-    
+
     if (!survey.questions || Object.keys(survey.questions).length === 0) {
       raffleControls.innerHTML = '<p class="raffle-info">No hay preguntas disponibles para sorteo</p>';
+      raffleInitialized = false;
       return;
     }
-    
+
+    // Check if raffle is already initialized and has the same questions
+    if (raffleInitialized && document.getElementById('raffle-question')) {
+      // Don't rebuild, just update the survey data if needed
+      return;
+    }
+
+    raffleInitialized = true;
     raffleControls.innerHTML = `
       <div class="raffle-form">
         <div class="form-group">
           <label for="raffle-question">Pregunta:</label>
           <select id="raffle-question">
-            <option value="">Selecciona una pregunta...</option>
-            ${Object.entries(survey.questions).map(([id, question]) => 
+            <option value="">Selecciona una pregunta para el sorteo...</option>
+            ${Object.entries(survey.questions).map(([id, question]) =>
               `<option value="${id}">${question.text}</option>`
             ).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label for="raffle-option">Opción ganadora:</label>
-          <select id="raffle-option" disabled>
-            <option value="">Primero selecciona una pregunta</option>
-          </select>
+        <div class="participants-info" id="participants-info" style="display:none;">
+          <p>Total de participantes: <strong id="participants-count">0</strong></p>
+          <p>Ganadores seleccionados: <strong id="winners-count">0</strong></p>
+          <p>Participantes disponibles: <strong id="available-count">0</strong></p>
         </div>
         <div class="raffle-actions">
           <button id="raffle-btn" class="btn-raffle" disabled>🎲 Sortear Ganador</button>
-          <button id="clear-winner-btn" class="btn-clear" style="display:none;">❌ Limpiar Ganador</button>
+          <button id="raffle-another-btn" class="btn-raffle" style="display:none;">🎲 Sortear Otro Ganador</button>
+          <button id="clear-winners-btn" class="btn-clear" style="display:none;">🗑️ Limpiar Todos los Ganadores</button>
         </div>
         <div id="raffle-result" class="raffle-result"></div>
+        <div id="winners-list" class="winners-list" style="display:none;">
+          <h4>🏆 Ganadores:</h4>
+          <div id="winners-content"></div>
+        </div>
       </div>
     `;
+
+    let currentWinners = [];
     
     // Question change handler
     document.getElementById('raffle-question').addEventListener('change', async (e) => {
       const questionId = e.target.value;
-      const optionSelect = document.getElementById('raffle-option');
       const raffleBtn = document.getElementById('raffle-btn');
-      
+      const raffleAnotherBtn = document.getElementById('raffle-another-btn');
+      const clearWinnersBtn = document.getElementById('clear-winners-btn');
+      const participantsInfo = document.getElementById('participants-info');
+      const winnersList = document.getElementById('winners-list');
+
       if (!questionId) {
-        optionSelect.innerHTML = '<option value="">Primero selecciona una pregunta</option>';
-        optionSelect.disabled = true;
         raffleBtn.disabled = true;
+        raffleAnotherBtn.style.display = 'none';
+        clearWinnersBtn.style.display = 'none';
+        participantsInfo.style.display = 'none';
+        winnersList.style.display = 'none';
+        document.getElementById('raffle-result').innerHTML = '';
+        currentWinners = [];
         return;
       }
-      
-      const question = survey.questions[questionId];
-      optionSelect.innerHTML = `
-        <option value="">Selecciona una opción...</option>
-        ${question.options.map((opt, i) => `<option value="${i}">${i + 1}. ${opt}</option>`).join('')}
-      `;
-      optionSelect.disabled = false;
-      
-      // Check if there's already a winner
-      if (question.winner) {
-        const winnerOption = question.options[question.winner.optionIndex];
-        document.getElementById('raffle-result').innerHTML = `
-          <div class="winner-display">
-            🏆 Ganador actual: <strong>${question.winner.userId}</strong><br>
-            Opción: <strong>${winnerOption}</strong><br>
-            <small>Seleccionado: ${new Date(question.winner.selectedAt).toLocaleString()}</small>
-          </div>
-        `;
-        document.getElementById('clear-winner-btn').style.display = 'inline-block';
-      } else {
-        document.getElementById('raffle-result').innerHTML = '';
-        document.getElementById('clear-winner-btn').style.display = 'none';
-      }
-    });
-    
-    // Option change handler
-    document.getElementById('raffle-option').addEventListener('change', async (e) => {
-      const questionId = document.getElementById('raffle-question').value;
-      const optionIndex = parseInt(e.target.value);
-      const raffleBtn = document.getElementById('raffle-btn');
-      
-      if (questionId && !isNaN(optionIndex)) {
-        try {
-          const voters = await getVotersByOption(surveyId, questionId, optionIndex);
-          raffleBtn.disabled = voters.length === 0;
-          raffleBtn.textContent = voters.length > 0 ? 
-            `🎲 Sortear entre ${voters.length} ${voters.length === 1 ? 'voto' : 'votos'}` : 
-            '🎲 No hay votos para esta opción';
-        } catch (error) {
-          raffleBtn.disabled = true;
-          raffleBtn.textContent = '🎲 Error al cargar votos';
+
+      try {
+        const question = survey.questions[questionId];
+        const participants = await getAllParticipants(surveyId, questionId);
+
+        // Check for existing raffle winners - only reset if it's a different question
+        const previousQuestionId = document.getElementById('raffle-question').dataset.previousId;
+        if (previousQuestionId !== questionId) {
+          currentWinners = question.raffleWinners || [];
+          document.getElementById('raffle-question').dataset.previousId = questionId;
         }
-      } else {
+
+        // Update participant counts
+        participantsInfo.style.display = 'block';
+        document.getElementById('participants-count').textContent = participants.length;
+        document.getElementById('winners-count').textContent = currentWinners.length;
+        document.getElementById('available-count').textContent = participants.length - currentWinners.length;
+
+        // Enable/disable buttons based on participants
+        if (participants.length === 0) {
+          raffleBtn.disabled = true;
+          raffleBtn.textContent = '🎲 No hay participantes';
+          raffleAnotherBtn.style.display = 'none';
+        } else if (currentWinners.length >= participants.length) {
+          raffleBtn.disabled = true;
+          raffleBtn.textContent = '🎲 Todos han ganado';
+          raffleAnotherBtn.style.display = 'none';
+          clearWinnersBtn.style.display = 'inline-block';
+        } else {
+          raffleBtn.disabled = false;
+          raffleBtn.textContent = `🎲 Sortear entre ${participants.length} participantes`;
+          if (currentWinners.length > 0) {
+            raffleBtn.style.display = 'none';
+            raffleAnotherBtn.style.display = 'inline-block';
+            raffleAnotherBtn.disabled = false;
+            clearWinnersBtn.style.display = 'inline-block';
+          } else {
+            raffleBtn.style.display = 'inline-block';
+            raffleAnotherBtn.style.display = 'none';
+            clearWinnersBtn.style.display = 'none';
+          }
+        }
+
+        // Display existing winners
+        if (currentWinners.length > 0) {
+          winnersList.style.display = 'block';
+          const winnersContent = document.getElementById('winners-content');
+          winnersContent.innerHTML = currentWinners.map((winner, index) => `
+            <div class="winner-item">
+              <span class="winner-number">#${winner.prizeNumber || (index + 1)}</span>
+              <span class="winner-id">${winner.userId}</span>
+              <span class="winner-time">${new Date(winner.selectedAt).toLocaleTimeString()}</span>
+            </div>
+          `).join('');
+        } else {
+          winnersList.style.display = 'none';
+        }
+
+      } catch (error) {
+        console.error('Error loading participants:', error);
         raffleBtn.disabled = true;
-        raffleBtn.textContent = '🎲 Sortear Ganador';
+        raffleBtn.textContent = '🎲 Error al cargar participantes';
       }
     });
     
     // Raffle button handler
-    document.getElementById('raffle-btn').addEventListener('click', async () => {
+    async function performRaffle() {
       const questionId = document.getElementById('raffle-question').value;
-      const optionIndex = parseInt(document.getElementById('raffle-option').value);
-      
-      if (!questionId || isNaN(optionIndex)) return;
-      
+      if (!questionId) return;
+
       try {
-        const result = await selectRandomWinner(surveyId, questionId, optionIndex);
-        const question = survey.questions[questionId];
-        const optionText = question.options[optionIndex];
-        
+        const excludeIds = currentWinners.map(w => w.userId);
+        const result = await selectRandomParticipant(surveyId, questionId, excludeIds);
+
+        // Add to current winners list
+        currentWinners.push({
+          userId: result.winnerId,
+          prizeNumber: result.prizeNumber,
+          selectedAt: Date.now()
+        });
+
+        // Update UI
         document.getElementById('raffle-result').innerHTML = `
           <div class="winner-announcement">
-            🎉 <strong>¡Ganador seleccionado!</strong><br>
+            🎉 <strong>¡Ganador #${result.prizeNumber} seleccionado!</strong><br>
             Usuario: <strong>${result.winnerId}</strong><br>
-            Opción: <strong>${optionText}</strong><br>
-            Seleccionado entre ${result.totalVoters} ${result.totalVoters === 1 ? 'voto' : 'votos'}
+            Seleccionado entre ${result.eligibleParticipants} participantes disponibles
           </div>
         `;
-        
-        document.getElementById('clear-winner-btn').style.display = 'inline-block';
+
+        // Update counts
+        document.getElementById('winners-count').textContent = currentWinners.length;
+        document.getElementById('available-count').textContent = result.totalParticipants - currentWinners.length;
+
+        // Update buttons
+        const raffleBtn = document.getElementById('raffle-btn');
+        const raffleAnotherBtn = document.getElementById('raffle-another-btn');
+        const clearWinnersBtn = document.getElementById('clear-winners-btn');
+
+        raffleBtn.style.display = 'none';
+        clearWinnersBtn.style.display = 'inline-block';
+
+        if (currentWinners.length < result.totalParticipants) {
+          raffleAnotherBtn.style.display = 'inline-block';
+          raffleAnotherBtn.disabled = false;
+        } else {
+          raffleAnotherBtn.style.display = 'none';
+          document.getElementById('raffle-result').innerHTML += `
+            <div class="info-message">✅ Todos los participantes han sido seleccionados</div>
+          `;
+        }
+
+        // Update winners list
+        const winnersList = document.getElementById('winners-list');
+        winnersList.style.display = 'block';
+        const winnersContent = document.getElementById('winners-content');
+        winnersContent.innerHTML = currentWinners.map((winner, index) => `
+          <div class="winner-item">
+            <span class="winner-number">#${winner.prizeNumber || (index + 1)}</span>
+            <span class="winner-id">${winner.userId}</span>
+            <span class="winner-time">${new Date(winner.selectedAt || Date.now()).toLocaleTimeString()}</span>
+          </div>
+        `).join('');
+
       } catch (error) {
         document.getElementById('raffle-result').innerHTML = `
           <div class="error-message">❌ Error: ${error.message}</div>
         `;
       }
-    });
-    
-    // Clear winner button handler
-    document.getElementById('clear-winner-btn').addEventListener('click', async () => {
-      const questionId = document.getElementById('raffle-question').value;
+    }
 
+    document.getElementById('raffle-btn').addEventListener('click', performRaffle);
+    document.getElementById('raffle-another-btn').addEventListener('click', performRaffle);
+
+    // Clear winners button handler
+    document.getElementById('clear-winners-btn').addEventListener('click', async () => {
+      const questionId = document.getElementById('raffle-question').value;
       if (!questionId) return;
 
-      try {
-        console.log('Clearing winner for question:', questionId);
-        await clearWinner(surveyId, questionId);
-        console.log('Winner cleared successfully');
-        document.getElementById('raffle-result').innerHTML = '';
-        document.getElementById('clear-winner-btn').style.display = 'none';
+      const confirmed = await showConfirmDialog(
+        'Limpiar Ganadores',
+        '¿Estás seguro de limpiar todos los ganadores? Esta acción no se puede deshacer.'
+      );
 
-        // Force update the question display to reflect winner removal
-        const questionSelect = document.getElementById('raffle-question');
-        questionSelect.dispatchEvent(new Event('change'));
-      } catch (error) {
-        console.error('Error clearing winner:', error);
+      if (confirmed) {
+        try {
+          await clearRaffleWinners(surveyId, questionId);
+          currentWinners = [];
+          document.getElementById('raffle-result').innerHTML = '<div class="info-message">✅ Ganadores limpiados</div>';
+          document.getElementById('winners-list').style.display = 'none';
+
+          // Update UI elements directly without triggering change event
+          const participants = await getAllParticipants(surveyId, questionId);
+          document.getElementById('winners-count').textContent = '0';
+          document.getElementById('available-count').textContent = participants.length;
+
+          // Reset buttons
+          const raffleBtn = document.getElementById('raffle-btn');
+          const raffleAnotherBtn = document.getElementById('raffle-another-btn');
+          const clearWinnersBtn = document.getElementById('clear-winners-btn');
+
+          raffleBtn.style.display = 'inline-block';
+          raffleBtn.disabled = false;
+          raffleBtn.textContent = `🎲 Sortear entre ${participants.length} participantes`;
+          raffleAnotherBtn.style.display = 'none';
+          clearWinnersBtn.style.display = 'none';
+        } catch (error) {
+          console.error('Error clearing winners:', error);
+          document.getElementById('raffle-result').innerHTML = `
+            <div class="error-message">❌ Error al limpiar ganadores</div>
+          `;
+        }
       }
     });
-
-    // Auto-select question with winner on page load
-    const questionWithWinner = Object.entries(survey.questions).find(([id, question]) => question.winner);
-    if (questionWithWinner) {
-      const [questionId] = questionWithWinner;
-      console.log('Found question with winner, auto-selecting:', questionId);
-      document.getElementById('raffle-question').value = questionId;
-      document.getElementById('raffle-question').dispatchEvent(new Event('change'));
-    }
   }
   
   // Activate question
@@ -941,6 +1034,80 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
     border-radius: 8px;
     border: 1px solid #f5c6cb;
     text-align: center;
+  }
+
+  .info-message {
+    background: #cff4fc;
+    color: #055160;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #b6effb;
+    text-align: center;
+    margin-top: 1rem;
+  }
+
+  .participants-info {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+  }
+
+  .participants-info p {
+    margin: 0.5rem 0;
+    color: #495057;
+  }
+
+  .participants-info strong {
+    color: #212529;
+    font-weight: 700;
+  }
+
+  .winners-list {
+    margin-top: 1.5rem;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .winners-list h4 {
+    margin: 0 0 1rem 0;
+    color: #212529;
+    font-size: 1.1rem;
+  }
+
+  .winner-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+  }
+
+  .winner-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .winner-number {
+    font-weight: 700;
+    color: #667eea;
+    font-size: 1.1rem;
+  }
+
+  .winner-id {
+    flex: 1;
+    margin: 0 1rem;
+    color: #495057;
+    font-family: monospace;
+  }
+
+  .winner-time {
+    color: #6c757d;
+    font-size: 0.9rem;
   }
   
   @keyframes pulse {

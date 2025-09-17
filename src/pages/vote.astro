@@ -113,8 +113,13 @@
         const voteSuccess = document.getElementById('vote-success');
         
         if (!question || !question.votingEnabled) {
-          // No active question - clear content but keep listening
-          votingContent.innerHTML = '';
+          // No active question - show waiting message
+          votingContent.innerHTML = `
+            <div class="waiting-message">
+              <div class="waiting-icon">⏳</div>
+              <h2>En este momento no hay encuestas activas</h2>
+            </div>
+          `;
           hasVoted = false;
           voteSuccess.style.display = 'none';
           // Also hide winner notification when no active question
@@ -326,5 +331,40 @@
         unsubscribeSurvey();
       });
     </script>
+
+    <style>
+      .waiting-message {
+        text-align: center;
+        padding: 3rem 2rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin: 2rem auto;
+        max-width: 400px;
+      }
+
+      .waiting-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        animation: pulse 2s infinite;
+      }
+
+      .waiting-message h2 {
+        color: #333;
+        margin-bottom: 1rem;
+        font-size: 1.5rem;
+      }
+
+      .waiting-message p {
+        color: #666;
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
+    </style>
   </body>
 </html>

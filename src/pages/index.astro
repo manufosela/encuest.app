@@ -131,7 +131,7 @@
 					);
 					
 					if (surveyEntry) {
-						window.location.href = `/vote/${surveyEntry[0]}`;
+						window.location.href = `/vote?id=${surveyEntry[0]}`;
 					} else {
 						errorMsg.textContent = 'Código no válido';
 						submitBtn.disabled = false;

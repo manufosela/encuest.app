@@ -179,22 +179,31 @@ export const getVotersByOption = async (surveyId, questionId, optionIndex) => {
   const votesRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes`);
   const snapshot = await get(votesRef);
   const votes = snapshot.val() || {};
-  
+
   return Object.entries(votes)
     .filter(([userId, vote]) => vote === optionIndex)
     .map(([userId]) => userId);
 };
 
+// Get all participants from a question (regardless of their answer)
+export const getAllParticipants = async (surveyId, questionId) => {
+  const votesRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes`);
+  const snapshot = await get(votesRef);
+  const votes = snapshot.val() || {};
+
+  return Object.keys(votes);
+};
+
 export const selectRandomWinner = async (surveyId, questionId, optionIndex) => {
   const voters = await getVotersByOption(surveyId, questionId, optionIndex);
-  
+
   if (voters.length === 0) {
     throw new Error('No hay votos para esta opción');
   }
-  
+
   const randomIndex = Math.floor(Math.random() * voters.length);
   const winnerId = voters[randomIndex];
-  
+
   // Set winner in database
   const winnerRef = ref(database, `surveys/${surveyId}/questions/${questionId}/winner`);
   await set(winnerRef, {
@@ -202,7 +211,7 @@ export const selectRandomWinner = async (surveyId, questionId, optionIndex) => {
     optionIndex: optionIndex,
     selectedAt: Date.now()
   });
-  
+
   // Set winner notification for user
   const notificationRef = ref(database, `winners/${winnerId}`);
   await set(notificationRef, {
@@ -212,8 +221,84 @@ export const selectRandomWinner = async (surveyId, questionId, optionIndex) => {
     selectedAt: Date.now(),
     message: '¡Felicidades! Has sido seleccionado como ganador.'
   });
-  
+
   return { winnerId, totalVoters: voters.length };
+};
+
+// Select random winner from all participants (for any-answer raffle)
+export const selectRandomParticipant = async (surveyId, questionId, excludeWinners = []) => {
+  const participants = await getAllParticipants(surveyId, questionId);
+
+  // Filter out previous winners if needed
+  const eligibleParticipants = participants.filter(userId => !excludeWinners.includes(userId));
+
+  if (eligibleParticipants.length === 0) {
+    throw new Error('No hay participantes disponibles para el sorteo');
+  }
+
+  const randomIndex = Math.floor(Math.random() * eligibleParticipants.length);
+  const winnerId = eligibleParticipants[randomIndex];
+
+  // Get winner's vote to store it
+  const votesRef = ref(database, `surveys/${surveyId}/questions/${questionId}/votes/${winnerId}`);
+  const voteSnapshot = await get(votesRef);
+  const votedOption = voteSnapshot.val();
+
+  // Store multiple winners in an array
+  const winnersRef = ref(database, `surveys/${surveyId}/questions/${questionId}/raffleWinners`);
+  const winnersSnapshot = await get(winnersRef);
+  const currentWinners = winnersSnapshot.val() || [];
+
+  const newWinner = {
+    userId: winnerId,
+    votedOption: votedOption,
+    selectedAt: Date.now(),
+    prizeNumber: currentWinners.length + 1
+  };
+
+  currentWinners.push(newWinner);
+  await set(winnersRef, currentWinners);
+
+  // Set winner notification for user
+  const notificationRef = ref(database, `winners/${winnerId}`);
+  await set(notificationRef, {
+    surveyId: surveyId,
+    questionId: questionId,
+    selectedAt: Date.now(),
+    prizeNumber: newWinner.prizeNumber,
+    message: `¡Felicidades! Has sido seleccionado como ganador #${newWinner.prizeNumber}.`
+  });
+
+  return {
+    winnerId,
+    totalParticipants: participants.length,
+    eligibleParticipants: eligibleParticipants.length,
+    prizeNumber: newWinner.prizeNumber,
+    votedOption
+  };
+};
+
+// Clear all raffle winners for a question
+export const clearRaffleWinners = async (surveyId, questionId) => {
+  // Get current winners before removing
+  const winnersRef = ref(database, `surveys/${surveyId}/questions/${questionId}/raffleWinners`);
+  const winnersSnapshot = await get(winnersRef);
+  const winners = winnersSnapshot.val() || [];
+
+  // Remove winners from question
+  await remove(winnersRef);
+
+  // Also clear winner field if exists (for backward compatibility)
+  const winnerRef = ref(database, `surveys/${surveyId}/questions/${questionId}/winner`);
+  await remove(winnerRef);
+
+  // Clear all winner notifications
+  for (const winner of winners) {
+    if (winner && winner.userId) {
+      const notificationRef = ref(database, `winners/${winner.userId}`);
+      await remove(notificationRef);
+    }
+  }
 };
 
 export const clearWinner = async (surveyId, questionId) => {
